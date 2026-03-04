@@ -1,0 +1,776 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Topas Prompt Library | Build Better AI Prompts Faster</title>
+
+  <!-- Fonts -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+
+  <!-- Tailwind via CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- Supabase JS -->
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+
+  <style>
+    :root {
+      --brand-orange: #FF7A00;
+      --brand-dark: #1E1E1E;
+      --brand-bg: #F7F7F7;
+    }
+
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: var(--brand-bg);
+    }
+
+    .glass-header {
+      background: rgba(255, 255, 255, 0.8);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+    }
+
+    .btn-orange {
+      background-color: var(--brand-orange);
+      color: white;
+      transition: all 0.3s ease;
+    }
+
+    .btn-orange:hover {
+      background-color: #e66e00;
+      transform: translateY(-1px);
+      box-shadow: 0 4px 12px rgba(255, 122, 0, 0.2);
+    }
+
+    .card-premium {
+      background: #FFFFFF;
+      border-radius: 16px;
+      padding: 24px;
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+      border: 1px solid rgba(0, 0, 0, 0.05);
+    }
+
+    .card-premium:hover {
+      transform: translateY(-4px);
+      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.06);
+      border-color: rgba(255, 122, 0, 0.2);
+    }
+
+    .hero-gradient {
+      background: radial-gradient(circle at 10% 20%, rgba(255, 122, 0, 0.05) 0%, rgba(255, 255, 255, 0) 50%);
+    }
+
+    .no-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+
+    .no-scrollbar {
+      -ms-overflow-style: none;
+      scrollbar-width: none;
+    }
+
+    @keyframes fadeIn {
+      from {
+        opacity: 0;
+        transform: translateY(10px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .fade-in {
+      animation: fadeIn 0.4s ease-out forwards;
+    }
+
+    .stagger-1 {
+      animation-delay: 0.1s;
+    }
+
+    .stagger-2 {
+      animation-delay: 0.2s;
+    }
+
+    .stagger-3 {
+      animation-delay: 0.3s;
+    }
+
+    .stagger-4 {
+      animation-delay: 0.4s;
+    }
+
+    section {
+      scroll-margin-top: 80px;
+    }
+  </style>
+
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          colors: {
+            brand: {
+              orange: '#FF7A00',
+              dark: '#1E1E1E',
+              bg: '#F7F7F7'
+            }
+          },
+          borderRadius: { '2xl': '16px' }
+        }
+      }
+    }
+  </script>
+</head>
+
+<body class="antialiased text-brand-dark">
+  <div id="app"></div>
+
+  <script>
+      (function () {
+        // --- Supabase Config ---
+        const SUPABASE_URL = 'https://yhrxfnjpgurchgzvjtqw.supabase.co';
+        const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlocnhmbmpwZ3VyY2hnenZqdHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1OTU4MjQsImV4cCI6MjA4ODE3MTgyNH0.ig6y9DCHNX-nyN3Rt48Dp7FGA-ZpAqMkFjSmzsAKREw';
+
+        let supabase;
+        try {
+          supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+        } catch (e) { console.error("Supabase failed:", e); }
+
+        // --- State ---
+        const state = {
+          user: null,
+          isSuperAdmin: false,
+          userRoles: [],
+          markets: [],
+          topics: [],
+          prompts: [],
+          searchQuery: '',
+          selectedMarketId: null,
+          selectedTopicId: null,
+          selectedPromptId: null,
+          view: 'loading',
+          isEditingNew: false,
+          currentRole: null
+        };
+
+        const appDiv = document.getElementById('app');
+
+        // --- API ---
+        const api = {
+          async getMarkets() {
+            const { data, error } = await supabase.from('markets').select('*').order('name');
+            return data || [];
+          },
+          async getCurrentUser() {
+            const { data: { session } } = await supabase.auth.getSession();
+            if (!session) return null;
+            const { data: userRecord } = await supabase.from('users').select('*').eq('id', session.user.id).single();
+            return { ...session.user, ...userRecord };
+          },
+          async ensureMarketAccess(userId, marketId) {
+            if (!marketId) return;
+            const { data } = await supabase.from('user_market_roles').select('role').eq('user_id', userId).eq('market_id', marketId).maybeSingle();
+            if (!data) await supabase.from('user_market_roles').insert({ user_id: userId, market_id: marketId, role: 'view' });
+          },
+          async getTopics(marketId) {
+            const { data } = await supabase.from('topics').select('*').eq('market_id', marketId).order('name');
+            return data || [];
+          },
+          async getPrompts(marketId, topicId, searchQuery = '') {
+            const { data } = await supabase.rpc('search_prompts', { p_market_id: marketId, p_topic_id: topicId, p_search_text: searchQuery || null });
+            return data || [];
+          },
+          async savePrompt(d) {
+            const payload = {
+              topic_id: d.topic_id,
+              title: d.title,
+              content: d.content
+            };
+            const { data, error } = d.id
+              ? await supabase.from('prompts').update(payload).eq('id', d.id).select().single()
+              : await supabase.from('prompts').insert(payload).select().single();
+            if (error) throw error;
+            return data;
+          },
+          async deletePrompt(id) { await supabase.from('prompts').delete().eq('id', id); },
+          async getPromptVersions(id) {
+            const { data } = await supabase.from('prompt_versions').select('version, content, created_at').eq('prompt_id', id).order('version', { ascending: false });
+            return data || [];
+          },
+          async getUsers() {
+            const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
+            return data || [];
+          }
+        };
+
+        // --- Router / Init ---
+        async function init() {
+          try {
+            state.markets = await api.getMarkets();
+            const { data: { session } } = await supabase.auth.getSession();
+            if (session) await handleLogin(session.user);
+            else { state.view = 'landing'; render(); }
+          } catch (e) { state.view = 'landing'; render(); }
+
+          supabase.auth.onAuthStateChange(async (event, session) => {
+            if (session && !state.user) await handleLogin(session.user);
+            else if (!session && state.user) { state.user = null; state.view = 'landing'; render(); }
+          });
+        }
+
+        async function handleLogin(authUser) {
+          state.view = 'loading'; render();
+          try {
+            const user = await api.getCurrentUser();
+            if (!user) { state.view = 'landing'; render(); return; }
+            state.user = user;
+            state.isSuperAdmin = user.is_super_admin;
+
+            const { data: roles } = await supabase.from('user_market_roles').select('*').eq('user_id', user.id);
+            state.userRoles = roles || [];
+
+            if (!state.isSuperAdmin) {
+              const allowedids = state.userRoles.map(r => r.market_id);
+              state.markets = state.markets.filter(m => allowedids.includes(m.id));
+            }
+            if (!state.selectedMarketId && state.markets.length > 0) state.selectedMarketId = state.markets[0].id;
+
+            state.view = 'app';
+            await loadMarketData();
+          } catch (e) { console.error(e); state.view = 'landing'; render(); }
+        }
+
+        async function loadMarketData() {
+          if (!state.selectedMarketId) { render(); return; }
+          if (state.isSuperAdmin) state.currentRole = 'superadmin';
+          else {
+            const r = state.userRoles.find(r => r.market_id === state.selectedMarketId);
+            state.currentRole = r ? r.role : 'view';
+          }
+          state.topics = await api.getTopics(state.selectedMarketId);
+          state.selectedPromptId = null;
+          state.selectedTopicId = null;
+          state.isEditingNew = false;
+          await loadPromptsData();
+        }
+
+        async function loadPromptsData() {
+          state.prompts = await api.getPrompts(state.selectedMarketId, state.selectedTopicId, state.searchQuery);
+          render();
+        }
+
+        // --- Render Functions ---
+        function render() {
+          appDiv.innerHTML = '';
+          let content = '';
+          if (state.view === 'loading') content = renderLoading();
+          else if (state.view === 'landing') content = renderLanding();
+          else if (state.view === 'app') content = renderMainApp();
+          else if (state.view === 'admin') content = renderAdminPanel();
+
+          if (typeof content === 'string') appDiv.innerHTML = content;
+          else if (content) appDiv.appendChild(content);
+
+          if (window.lucide) try { window.lucide.createIcons(); } catch (e) { }
+        }
+
+        function createElement(html) {
+          const d = document.createElement('div');
+          d.innerHTML = html.trim();
+          return d.firstChild;
+        }
+
+        function renderLoading() {
+          return `<div class="flex h-screen items-center justify-center bg-white"><div class="flex flex-col items-center gap-4"><i data-lucide="loader-2" class="h-10 w-10 animate-spin text-brand-orange"></i><p class="font-bold text-slate-400 uppercase tracking-widest text-xs">Synchronizing Library...</p></div></div>`;
+        }
+
+        function renderLanding() {
+          const el = createElement(`
+          <div class="min-h-screen hero-gradient">
+            <header class="glass-header fixed top-0 w-full z-50 border-b border-black/5">
+              <nav class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
+                <div class="flex items-center gap-2">
+                  <div class="bg-brand-orange p-1.5 rounded-lg text-white"><i data-lucide="library" class="h-6 w-6"></i></div>
+                  <span class="text-xl font-bold tracking-tight">Topas <span class="text-brand-orange">Library</span></span>
+                </div>
+                <div class="hidden md:flex items-center gap-8 text-sm font-medium text-slate-600">
+                  <a href="#" class="hover:text-brand-orange transition-colors">Home</a>
+                </div>
+                <div class="flex items-center gap-4">
+                  <button id="btn-show-login-header" class="text-sm font-semibold text-slate-900 px-4 py-2">Login</button>
+                  <button id="btn-show-signup-header" class="btn-orange text-sm font-semibold px-6 py-2.5 rounded-full shadow-lg shadow-orange-500/20">Sign up Free</button>
+                </div>
+              </nav>
+            </header>
+
+            <main class="pt-32">
+              <section class="max-w-7xl mx-auto px-6 py-12 md:py-24 grid md:grid-cols-2 gap-12 items-center">
+                <div class="fade-in stagger-1">
+                  <h1 class="text-5xl md:text-7xl font-extrabold leading-[1.1] text-brand-dark mb-6">Build Better AI <span class="text-brand-orange">Prompts</span> Faster</h1>
+                  <p class="text-lg text-slate-500 mb-10 max-w-lg leading-relaxed">Topas Prompt Library helps teams discover, organize, and reuse high-quality prompts for AI workflows. Streamline your AI strategy in seconds.</p>
+                  <div class="flex flex-wrap gap-4">
+                    <button id="btn-hero-login" class="btn-orange px-10 py-4 rounded-2xl font-bold flex items-center gap-2">Login <i data-lucide="arrow-right" class="h-5 w-5"></i></button>
+                    <button id="btn-hero-signup" class="bg-white border border-slate-200 px-10 py-4 rounded-2xl font-bold hover:bg-slate-50 transition-colors">Sign up</button>
+                  </div>
+                </div>
+                <div class="relative fade-in stagger-2 flex justify-center">
+                  <div class="absolute inset-0 bg-brand-orange/10 blur-[100px] rounded-full"></div>
+                  <img src="/C:/Users/AD/.gemini/antigravity/brain/9f21ca29-c220-4585-9044-f8b1c9019c08/hero_illustration_3d_1772614948741.png" alt="Hero Illustration" class="relative z-10 w-full max-w-lg transform hover:scale-105 transition-transform duration-700">
+                </div>
+              </section>
+
+              <section id="categories" class="bg-white py-24 border-y border-slate-100">
+                <div class="max-w-7xl mx-auto px-6">
+                  <div class="text-center mb-16 fade-in stagger-1">
+                    <h2 class="text-3xl md:text-4xl font-bold mb-4">Explore Prompt Categories</h2>
+                    <p class="text-slate-500">Browse prompts by use case and discover new AI workflows.</p>
+                  </div>
+                  <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                    ${renderCard('Marketing', 'trending-up', ['SEO', 'Ads', 'Content'], 'stagger-1')}
+                    ${renderCard('Business', 'briefcase', ['Strategy', 'Planning', 'Decision'], 'stagger-2')}
+                    ${renderCard('Automation', 'cpu', ['n8n', 'Zapier', 'Workflow'], 'stagger-3')}
+                    ${renderCard('Creation', 'pen-tool', ['Blog', 'Video', 'Social'], 'stagger-4')}
+                  </div>
+                </div>
+              </section>
+            </main>
+
+            <div id="login-modal" class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[100] hidden items-center justify-center p-4">
+              <div class="bg-white w-full max-w-[440px] rounded-[24px] shadow-2xl overflow-hidden fade-in">
+                <div class="p-8 text-center bg-slate-50 border-b border-slate-100 relative">
+                  <button id="btn-close-modal" class="absolute right-4 top-4 text-slate-400 hover:text-slate-600"><i data-lucide="x" class="h-5 w-5"></i></button>
+                  <div class="bg-brand-orange w-12 h-12 rounded-xl text-white flex items-center justify-center mx-auto mb-4 shadow-lg shadow-orange-500/30"><i data-lucide="shield-check" class="h-6 w-6"></i></div>
+                  <h3 class="text-2xl font-bold">Welcome Back</h3>
+                  <p class="text-slate-500 text-sm mt-1">Continue with your Google account</p>
+                </div>
+                <div class="p-8 space-y-6 text-center">
+                  <button id="btn-google-login-direct" class="w-full flex items-center justify-center gap-3 bg-white border border-slate-200 py-4 rounded-xl text-sm font-bold hover:bg-slate-50 transition-all shadow-sm">
+                    <img src="https://www.svgrepo.com/show/475656/google-color.svg" class="h-5 w-5">Continue with Google
+                  </button>
+                  <p class="text-xs text-slate-400">Secure authentication via Supabase Auth.</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        `);
+
+          function renderCard(t, i, items, s) {
+            return `<div class="card-premium fade-in ${s}"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="${i}" class="h-6 w-6"></i></div><h3 class="text-xl font-bold mb-4">${t}</h3><ul class="space-y-3">${items.map(it => `<li class="flex items-center gap-2 text-sm text-slate-500"><i data-lucide="check-circle" class="h-3 w-3 text-brand-orange/30"></i> ${it}</li>`).join('')}</ul></div>`;
+          }
+
+          setTimeout(() => {
+            const mod = document.getElementById('login-modal');
+            const show = () => mod.style.display = 'flex';
+            document.getElementById('btn-show-login-header').onclick = show;
+            document.getElementById('btn-show-signup-header').onclick = show;
+            document.getElementById('btn-hero-login').onclick = show;
+            document.getElementById('btn-hero-signup').onclick = show;
+            document.getElementById('btn-close-modal').onclick = () => mod.style.display = 'none';
+            document.getElementById('btn-google-login-direct').onclick = async () => {
+              await supabase.auth.signInWithOAuth({ provider: 'google' });
+            };
+          }, 0);
+          return el;
+        }
+
+        function renderMainApp() {
+          const el = document.createElement('div');
+          el.className = 'flex flex-col h-screen fade-in bg-[#fcfcfc]';
+          el.innerHTML = `
+          <header class="bg-white border-b border-black/5 h-16 flex-shrink-0 z-50">
+            <div class="px-6 h-full flex items-center justify-between">
+              <div class="flex items-center gap-2">
+                <div class="bg-brand-orange p-1.5 rounded-lg text-white"><i data-lucide="library" class="h-5 w-5"></i></div>
+                <span class="font-bold text-lg tracking-tight">Topas <span class="text-brand-orange">Library</span></span>
+              </div>
+              <div class="flex items-center gap-4">
+                ${state.isSuperAdmin ? `<button id="btn-admin" class="flex items-center gap-2 text-sm font-bold text-slate-600 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all"><i data-lucide="shield" class="h-4 w-4"></i> Admin Panel</button>` : ''}
+                <div class="relative group cursor-pointer">
+                  <div class="h-10 w-10 rounded-full bg-brand-orange/10 flex items-center justify-center text-brand-orange font-bold border border-brand-orange/20 overflow-hidden">
+                    ${state.user.user_metadata?.avatar_url ? `<img src="${state.user.user_metadata.avatar_url}" class="h-full w-full">` : state.user.email.charAt(0).toUpperCase()}
+                  </div>
+                  <div class="hidden group-hover:block absolute right-0 w-64 mt-2 bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 z-[60] overflow-hidden">
+                    <div class="p-4 border-b border-slate-50"><p class="text-sm font-bold truncate">${state.user.name || 'User'}</p><p class="text-xs text-slate-400 truncate">${state.user.email}</p></div>
+                    <div class="p-2 text-sm font-medium"><button id="btn-logout" class="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors">Sign out</button></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </header>
+
+          <div class="flex flex-1 overflow-hidden">
+            <aside class="w-72 border-r border-black/5 bg-white flex flex-col flex-shrink-0">
+              <div class="p-6">
+                <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-2 block">Current Market</label>
+                <select id="sel-market-sidebar" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-orange/20 outline-none appearance-none cursor-pointer">
+                   ${state.markets.map(m => `<option value="${m.id}" ${state.selectedMarketId === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}
+                </select>
+              </div>
+
+              <div class="px-6 pb-2"><div class="h-px bg-slate-50 w-full"></div></div>
+
+              <div class="px-4 py-4 space-y-1" id="nav-list">
+                <button id="btn-all-topics" class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${!state.selectedTopicId ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
+                  <i data-lucide="grid" class="h-4 w-4"></i> All Categories
+                </button>
+                <div class="pt-4 px-4"><span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Topic Area</span></div>
+                <div id="topic-list" class="space-y-1"></div>
+              </div>
+              
+              ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `
+                <div class="mt-auto p-4">
+                  <button id="btn-add-topic" class="w-full border-2 border-dashed border-slate-100 py-3 rounded-2xl text-xs font-bold text-slate-400 hover:border-brand-orange/20 hover:text-brand-orange transition-all flex items-center justify-center gap-2"><i data-lucide="plus-circle" class="h-4 w-4"></i> Add New Topic</button>
+                </div>
+              ` : ''}
+            </aside>
+
+            <main class="flex-1 overflow-y-auto bg-[#fafafa] flex flex-col pt-8 px-8" id="main-content"></main>
+            
+            <aside id="prompts-sidebar" class="w-80 border-l border-black/5 bg-white flex flex-col flex-shrink-0 hidden">
+              <div class="p-4 border-b border-slate-50">
+                <div class="relative">
+                  <i data-lucide="search" class="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-300"></i>
+                  <input type="text" id="input-search" class="w-full bg-slate-50 border-none rounded-lg py-2 pl-9 pr-4 text-xs font-medium outline-none" placeholder="Filter prompts...">
+                </div>
+              </div>
+              <div class="flex-1 overflow-y-auto p-4 space-y-2" id="prompt-list"></div>
+            </aside>
+          </div>
+        `;
+
+          setTimeout(() => {
+            document.getElementById('sel-market-sidebar').onchange = async (e) => { state.selectedMarketId = e.target.value; await loadMarketData(); };
+            document.getElementById('btn-all-topics').onclick = () => { state.selectedTopicId = null; state.selectedPromptId = null; state.isEditingNew = false; render(); };
+
+            const topicList = document.getElementById('topic-list');
+            state.topics.forEach(t => {
+              const isSel = state.selectedTopicId === t.id;
+              const canManage = state.currentRole === 'edit' || state.isSuperAdmin;
+              const b = createElement(`
+              <div class="group relative">
+                <button class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${isSel ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
+                  <i data-lucide="folder" class="h-4 w-4"></i> ${t.name}
+                </button>
+                ${canManage ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
+              </div>
+            `);
+              b.querySelector('button:first-child').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
+              const delBtn = b.querySelector('.btn-del-topic');
+              if (delBtn) delBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
+                  await supabase.from('topics').delete().eq('id', t.id);
+                  if (state.selectedTopicId === t.id) state.selectedTopicId = null;
+                  await loadMarketData();
+                }
+              };
+              topicList.appendChild(b);
+            });
+
+            const main = document.getElementById('main-content');
+            const pSidebar = document.getElementById('prompts-sidebar');
+            const isOverview = !state.selectedTopicId;
+
+            if (isOverview) {
+              pSidebar.classList.add('hidden');
+              main.innerHTML = `
+              <div class="mb-10"><h2 class="text-3xl font-black tracking-tight text-brand-dark">Market Overview</h2><p class="text-slate-400 font-medium">Select a category to explore prompts</p></div>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
+                ${state.topics.map(t => `<div class="card-premium cursor-pointer group" onclick="window.setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
+              </div>
+            `;
+            } else {
+              pSidebar.classList.remove('hidden');
+              const activeT = state.topics.find(t => t.id === state.selectedTopicId);
+
+              if (state.isEditingNew) {
+                main.innerHTML = renderPromptEditorHTML();
+                attachEditorEvents();
+              } else if (state.selectedPromptId) {
+                const p = state.prompts.find(pr => pr.id === state.selectedPromptId);
+                if (p) {
+                  main.innerHTML = renderPromptDetailHTML(p);
+                  attachDetailEvents(p);
+                }
+              } else {
+                main.innerHTML = `
+                  <div class="flex-1 flex flex-col items-center justify-center text-slate-300">
+                    <div class="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-6"><i data-lucide="sparkles" class="h-10 w-10 text-orange-200"></i></div>
+                    <p class="text-slate-500 font-bold text-lg mb-2">${activeT?.name}</p>
+                    <p class="text-sm text-slate-400 mb-6">Select a prompt from the sidebar or</p>
+                    ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `<button id="btn-create-p" class="btn-orange px-6 py-2.5 rounded-xl font-bold text-sm">Create New Prompt</button>` : ''}
+                  </div>
+                `;
+                document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isEditingNew = true; state.selectedPromptId = null; render(); });
+              }
+
+              const pList = document.getElementById('prompt-list');
+              state.prompts.forEach(p => {
+                const canManage = state.currentRole === 'edit' || state.isSuperAdmin;
+                const b = createElement(`
+                 <div class="group relative">
+                   <div class="bg-white p-4 rounded-xl border ${state.selectedPromptId === p.id ? 'border-brand-orange shadow-md' : 'border-slate-100'} hover:border-brand-orange cursor-pointer transition-all shadow-sm">
+                     <h4 class="text-xs font-bold text-slate-800 mb-1 truncate">${p.title}</h4>
+                     <p class="text-[10px] text-slate-400 line-clamp-2">${p.content || ''}</p>
+                   </div>
+                   ${canManage ? `<button class="btn-del-p absolute right-2 top-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-3 w-3"></i></button>` : ''}
+                 </div>
+               `);
+                b.querySelector('div').onclick = () => { state.selectedPromptId = p.id; state.isEditingNew = false; render(); };
+                const delBtn = b.querySelector('.btn-del-p');
+                if (delBtn) delBtn.onclick = async (e) => {
+                  e.stopPropagation();
+                  if (confirm("Xóa prompt này?")) {
+                    await api.deletePrompt(p.id);
+                    if (state.selectedPromptId === p.id) state.selectedPromptId = null;
+                    await loadPromptsData();
+                  }
+                };
+                pList.appendChild(b);
+              });
+            }
+
+            window.setTopic = async (tid) => { state.selectedTopicId = tid; await loadPromptsData(); };
+            document.getElementById('btn-logout').onclick = () => supabase.auth.signOut();
+            document.getElementById('btn-admin')?.addEventListener('click', () => { state.view = 'admin'; render(); });
+            document.getElementById('btn-add-topic')?.addEventListener('click', async () => {
+              const n = prompt("New Category Name:");
+              if (n) { await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n }); await loadMarketData(); }
+            });
+            if (window.lucide) window.lucide.createIcons();
+          }, 0);
+          return el;
+        }
+
+        function renderPromptDetailHTML(p) {
+          const canEdit = state.currentRole === 'edit' || state.isSuperAdmin;
+          return `
+          <div class="max-w-4xl w-full mx-auto fade-in">
+            <div class="flex justify-between items-start mb-10">
+              <div>
+                <div class="bg-orange-50 text-brand-orange text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg inline-block mb-3">${state.topics.find(t => t.id === p.topic_id)?.name}</div>
+                <h1 class="text-4xl font-black tracking-tight text-brand-dark mb-4">${p.title}</h1>
+              </div>
+              <div class="flex gap-2">
+                <button id="btn-copy-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-slate-50"><i data-lucide="copy" class="h-4 w-4"></i> Copy</button>
+                ${canEdit ? `<button id="btn-edit-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-50"><i data-lucide="edit-3" class="h-4 w-4"></i> Edit</button>` : ''}
+              </div>
+            </div>
+            <div class="bg-white rounded-[32px] p-8 md:p-12 border border-slate-100 shadow-xl shadow-slate-900/5 font-mono text-sm leading-relaxed whitespace-pre-wrap text-slate-700 min-h-[300px]">${p.content || ''}</div>
+            <div class="mt-16 pt-10 border-t border-slate-100"><h3 class="text-xs font-black uppercase tracking-widest text-slate-300 mb-8 flex items-center gap-2"><i data-lucide="history" class="h-4 w-4"></i> Revision History</h3><div id="vh-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20"></div></div>
+          </div>
+        `;
+        }
+
+        function attachDetailEvents(p) {
+          document.getElementById('btn-copy-main').onclick = () => {
+            navigator.clipboard.writeText(p.content);
+            const b = document.getElementById('btn-copy-main'); b.innerHTML = `<i data-lucide="check" class="h-4 w-4 text-green-500"></i> Copied!`;
+            setTimeout(() => { b.innerHTML = `<i data-lucide="copy" class="h-4 w-4"></i> Copy`; if (window.lucide) window.lucide.createIcons(); }, 1500);
+          };
+          document.getElementById('btn-edit-main')?.addEventListener('click', () => { state.isEditingNew = true; render(); });
+          api.getPromptVersions(p.id).then(vs => {
+            const l = document.getElementById('vh-list');
+            l.innerHTML = vs.map(v => `<div class="bg-slate-50 border border-slate-100 rounded-2xl p-5 shadow-sm"><div class="flex justify-between items-center mb-3"><span class="font-black text-[10px] text-brand-orange uppercase">Revision v${v.version}</span><span class="text-[10px] text-slate-300 font-bold">${new Date(v.created_at).toLocaleString()}</span></div><p class="text-xs text-slate-500 line-clamp-3 font-mono">${v.content || ''}</p></div>`).join('');
+          });
+        }
+
+        function renderPromptEditorHTML() {
+          const p = state.prompts.find(pr => pr.id === state.selectedPromptId) || { topic_id: state.selectedTopicId, title: '', content: '' };
+          return `
+           <div class="max-w-4xl mx-auto w-full fade-in">
+             <div class="flex items-center gap-4 mb-10">
+               <button id="btn-cancel-p" class="p-2 hover:bg-slate-50 rounded-xl transition-all"><i data-lucide="arrow-left" class="h-6 w-6 text-slate-400"></i></button>
+               <h2 class="text-3xl font-black">${state.selectedPromptId ? 'Update Prompt' : 'Create New'}</h2>
+             </div>
+             <form id="form-p" class="space-y-8 pb-20">
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">Category</label><select id="in-topic" required class="w-full bg-white border border-slate-100 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-50">${state.topics.map(t => `<option value="${t.id}" ${p.topic_id === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>
+                  <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">Title</label><input type="text" id="in-title" required value="${p.title}" class="w-full bg-white border border-slate-100 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-50" placeholder="Prompt title..."></div>
+                </div>
+                <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">Content</label><textarea id="in-content" required class="w-full bg-white border border-slate-100 rounded-3xl p-6 text-sm font-mono leading-relaxed outline-none focus:ring-2 focus:ring-orange-50 min-h-[400px]" placeholder="Body text...">${p.content || ''}</textarea></div>
+                <div class="flex justify-end gap-3"><button type="submit" class="btn-orange px-10 py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/20">Save Prompt</button></div>
+             </form>
+           </div>
+         `;
+        }
+
+        function attachEditorEvents() {
+          document.getElementById('btn-cancel-p').onclick = () => { state.isEditingNew = false; render(); };
+          document.getElementById('form-p').onsubmit = async (e) => {
+            e.preventDefault();
+            const d = {
+              id: state.selectedPromptId,
+              topic_id: document.getElementById('in-topic').value,
+              title: document.getElementById('in-title').value,
+              content: document.getElementById('in-content').value
+            };
+            try {
+              const res = await api.savePrompt(d);
+              state.isEditingNew = false;
+              state.selectedPromptId = res.id;
+              await loadPromptsData();
+            } catch (e) { alert(e.message); }
+          };
+        }
+
+        function renderAdminPanel() {
+          const el = createElement(`
+          <div class="min-h-screen bg-white p-10 overflow-y-auto w-full">
+            <div class="max-w-6xl mx-auto">
+              <div class="flex items-center justify-between mb-16">
+                <div class="flex items-center gap-4"><div class="bg-brand-dark p-3 rounded-2xl text-white shadow-xl shadow-slate-900/10"><i data-lucide="shield" class="h-7 w-7"></i></div><div><h1 class="text-3xl font-black">Management Hub</h1><p class="text-slate-400 font-medium">Control users, markets and permissions</p></div></div>
+                <button id="btn-back-app" class="bg-white border border-slate-200 px-6 py-3 rounded-2xl font-bold hover:bg-slate-50 transition-all flex items-center gap-2"><i data-lucide="arrow-left" class="h-4 w-4"></i> Back to Library</button>
+              </div>
+              <div class="grid grid-cols-1 lg:grid-cols-3 gap-10">
+                <div class="lg:col-span-2 space-y-12">
+                  <!-- Market Access Section -->
+                  <div class="space-y-6">
+                    <div class="bg-brand-bg rounded-3xl p-8 border border-slate-100 shadow-sm"><h3 class="text-lg font-black mb-8 flex items-center gap-3"><i data-lucide="user-plus" class="h-5 w-5 text-brand-orange"></i> Assign Market Role</h3>
+                      <form id="form-assign-role" class="grid grid-cols-1 md:grid-cols-4 gap-4 items-end">
+                        <div class="space-y-2"><label class="text-[10px] font-black uppercase text-slate-300">User</label><select id="sel-user" class="w-full bg-white border-none rounded-xl p-3 text-sm font-bold outline-none"></select></div>
+                        <div class="space-y-2"><label class="text-[10px] font-black uppercase text-slate-300">Market</label><select id="sel-market" class="w-full bg-white border-none rounded-xl p-3 text-sm font-bold outline-none"></select></div>
+                        <div class="space-y-2"><label class="text-[10px] font-black uppercase text-slate-300">Role</label><select id="sel-role" class="w-full bg-white border-none rounded-xl p-3 text-sm font-bold outline-none"><option value="view">Viewer</option><option value="edit">Editor</option></select></div>
+                        <button type="submit" class="btn-orange h-[46px] rounded-xl font-bold text-sm">Grant Access</button>
+                      </form>
+                    </div>
+                    <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm overflow-hidden"><h3 class="text-lg font-black mb-6">Market Access List</h3><div class="overflow-x-auto"><table class="w-full text-left"><thead class="text-[10px] font-black uppercase text-slate-300 border-b border-slate-50"><tr><th class="pb-4">User</th><th class="pb-4">Market</th><th class="pb-4">Role</th><th class="text-right pb-4">Actions</th></tr></thead><tbody id="roles-tbody"></tbody></table></div></div>
+                  </div>
+
+                  <!-- User Management Section -->
+                  <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm overflow-hidden">
+                    <h3 class="text-lg font-black mb-6 flex items-center gap-3"><i data-lucide="users" class="h-5 w-5 text-brand-orange"></i> User Management</h3>
+                    <div class="overflow-x-auto">
+                      <table class="w-full text-left">
+                        <thead class="text-[10px] font-black uppercase text-slate-300 border-b border-slate-50">
+                          <tr><th class="pb-4">User Email</th><th class="pb-4">Status</th><th class="text-right pb-4">Actions</th></tr>
+                        </thead>
+                        <tbody id="users-tbody"></tbody>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+
+                <!-- Side Panel: Markets -->
+                <aside class="space-y-10">
+                  <div class="bg-white rounded-3xl p-8 border border-slate-100 shadow-sm">
+                    <h3 class="text-lg font-black mb-6 flex items-center gap-2"><i data-lucide="plus-circle" class="h-5 w-5 text-brand-orange"></i> Create Market</h3>
+                    <form id="form-add-market" class="space-y-4">
+                      <input type="text" id="input-new-market" required placeholder="Market Name..." class="w-full bg-slate-50 border-none rounded-xl p-4 text-sm font-bold outline-none">
+                      <button type="submit" class="w-full btn-orange py-4 rounded-xl font-bold">Launch Market</button>
+                    </form>
+                    <div class="mt-8 space-y-3" id="market-list-admin"></div>
+                  </div>
+                </aside>
+              </div>
+            </div>
+          </div>
+        `);
+          setTimeout(async () => {
+            document.getElementById('btn-back-app').onclick = async () => { state.view = 'app'; await handleLogin(state.user); };
+            await loadAdminData();
+          }, 0);
+          return el;
+        }
+
+        async function loadAdminData() {
+          const [usrs, mrkts, { data: rls }] = await Promise.all([
+            api.getUsers(),
+            api.getMarkets(),
+            supabase.from('user_market_roles').select('*, users(email), markets(name)')
+          ]);
+
+          // 1. Assign Role Dropdowns
+          document.getElementById('sel-user').innerHTML = usrs.map(u => `<option value="${u.id}">${u.email}</option>`).join('');
+          document.getElementById('sel-market').innerHTML = mrkts.map(m => `<option value="${m.id}">${m.name}</option>`).join('');
+
+          // 2. Market Access Table
+          document.getElementById('roles-tbody').innerHTML = (rls || []).map(r => `
+           <tr class="border-b border-slate-50 last:border-none">
+             <td class="py-4 text-sm font-bold">${r.users?.email}</td>
+             <td class="py-4 text-sm font-medium text-slate-400">${r.markets?.name}</td>
+             <td class="py-4"><span class="text-[9px] font-black uppercase px-2 py-1 rounded-lg ${r.role === 'edit' ? 'bg-brand-orange text-white' : 'bg-slate-100 text-slate-400'}">${r.role}</span></td>
+             <td class="py-4 text-right">
+               <button class="btn-del-role p-2 text-slate-300 hover:text-red-500 transition-colors" data-id="${r.id}">
+                 <i data-lucide="trash-2" class="h-4 w-4"></i>
+               </button>
+             </td>
+           </tr>`).join('');
+
+          // 3. User Management Table
+          document.getElementById('users-tbody').innerHTML = usrs.map(u => `
+           <tr class="border-b border-slate-50 last:border-none">
+             <td class="py-4">
+                <div class="flex flex-col">
+                  <span class="text-sm font-bold">${u.email}</span>
+                  <span class="text-[10px] text-slate-400">${u.name || 'No Display Name'}</span>
+                </div>
+             </td>
+             <td class="py-4">
+                ${u.is_super_admin
+              ? `<span class="bg-brand-dark text-white text-[9px] font-black uppercase px-2 py-1 rounded-lg">Super Admin</span>`
+              : `<span class="bg-slate-100 text-slate-400 text-[9px] font-black uppercase px-2 py-1 rounded-lg">Standard User</span>`}
+             </td>
+             <td class="py-4 text-right flex items-center justify-end gap-2">
+                <button class="btn-toggle-admin p-2 ${u.is_super_admin ? 'text-brand-orange' : 'text-slate-300'} hover:text-brand-orange transition-colors" data-id="${u.id}" data-admin="${u.is_super_admin}" title="${u.is_super_admin ? 'Remove Super Admin' : 'Grant Super Admin'}">
+                  <i data-lucide="${u.is_super_admin ? 'user-minus' : 'user-check'}" class="h-4 w-4"></i>
+                </button>
+                <button class="btn-del-user p-2 text-slate-300 hover:text-red-500 transition-colors" data-id="${u.id}" title="Delete User Profile">
+                  <i data-lucide="trash-2" class="h-4 w-4"></i>
+                </button>
+             </td>
+           </tr>`).join('');
+
+          // 4. Market List Side
+          document.getElementById('market-list-admin').innerHTML = mrkts.map(m => `<div class="p-3 bg-slate-50 rounded-xl text-sm font-bold flex justify-between items-center">${m.name}</div>`).join('');
+
+          // Re-init Icons
+          if (window.lucide) window.lucide.createIcons();
+
+          // Attach Listeners
+          document.querySelectorAll('.btn-del-role').forEach(b => b.onclick = async () => {
+            if (confirm("Revoke access to this market?")) {
+              await supabase.from('user_market_roles').delete().eq('id', b.dataset.id);
+              loadAdminData();
+            }
+          });
+
+          document.querySelectorAll('.btn-toggle-admin').forEach(b => b.onclick = async () => {
+            const id = b.dataset.id;
+            const isCurrentAdmin = b.dataset.admin === 'true';
+            const promptMsg = isCurrentAdmin ? "Remove Super Admin rights?" : "Grant Super Admin rights to this user?";
+            if (confirm(promptMsg)) {
+              await supabase.from('users').update({ is_super_admin: !isCurrentAdmin }).eq('id', id);
+              loadAdminData();
+            }
+          });
+
+          document.querySelectorAll('.btn-del-user').forEach(b => b.onclick = async () => {
+            if (confirm("Permanently delete this user profile from the database? (Note: This won't delete the auth account but will remove all access and profile data)")) {
+              await supabase.from('users').delete().eq('id', b.dataset.id);
+              loadAdminData();
+            }
+          });
+        }
+
+        document.addEventListener('submit', async (e) => {
+          if (e.target.id === 'form-assign-role') { e.preventDefault(); const { error } = await supabase.from('user_market_roles').upsert({ user_id: document.getElementById('sel-user').value, market_id: document.getElementById('sel-market').value, role: document.getElementById('sel-role').value }, { onConflict: 'user_id,market_id' }); if (error) alert(error.message); else loadAdminData(); }
+          if (e.target.id === 'form-add-market') { e.preventDefault(); const { error } = await supabase.from('markets').insert({ name: document.getElementById('input-new-market').value }); if (error) alert(error.message); else { document.getElementById('input-new-market').value = ''; loadAdminData(); } }
+        });
+
+        init();
+      })();
+  </script>
+</body>
+
+</html>
