@@ -416,16 +416,6 @@
             </aside>
 
             <main class="flex-1 overflow-y-auto bg-[#fafafa] flex flex-col pt-8 px-8 no-scrollbar" id="main-content"></main>
-            
-            <aside id="prompts-sidebar" class="w-80 border-l border-black/5 bg-white flex flex-col flex-shrink-0 hidden">
-              <div class="p-4 border-b border-slate-50">
-                <div class="relative">
-                  <i data-lucide="search" class="absolute left-3 top-2.5 h-3.5 w-3.5 text-slate-300"></i>
-                  <input type="text" id="input-search" class="w-full bg-slate-50 border-none rounded-lg py-2 pl-9 pr-4 text-xs font-medium outline-none" placeholder="Filter prompts...">
-                </div>
-              </div>
-              <div class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar" id="prompt-list"></div>
-            </aside>
           </div>
         `;
           return el;
@@ -448,7 +438,6 @@
           updateHeader();
           updateSidebar();
           updateMainContent();
-          updatePromptsSidebar();
           if (window.lucide) window.lucide.createIcons();
         }
 
@@ -581,45 +570,95 @@
             if (p) { m.innerHTML = renderPromptDetailHTML(p); attachDetailEvents(p); }
           } else {
             const at = state.topics.find(t => t.id === state.selectedTopicId);
+            const can = state.currentRole === 'edit' || state.isSuperAdmin;
+
             m.innerHTML = `
-              <div class="flex-1 flex flex-col items-center justify-center text-slate-300 fade-in">
-                <div class="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-6"><i data-lucide="sparkles" class="h-10 w-10 text-orange-200"></i></div>
-                <p class="text-slate-500 font-bold text-lg mb-2">${at?.name}</p>
-                <p class="text-sm text-slate-400 mb-6">Select a prompt from the sidebar or</p>
-                ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `<button id="btn-create-p" class="btn-orange px-6 py-2.5 rounded-xl font-bold text-sm">Create New Prompt</button>` : ''}
+              <div class="max-w-6xl mx-auto w-full fade-in pb-20">
+                <div class="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-12">
+                  <div>
+                    <h2 class="text-3xl font-black tracking-tight text-brand-dark">${at?.name}</h2>
+                    <p class="text-slate-400 font-medium">Browse and manage prompts in this category</p>
+                  </div>
+                  <div class="flex items-center gap-3">
+                    <div class="relative">
+                      <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300"></i>
+                      <input type="text" id="input-search-main" value="${state.searchQuery || ''}" class="bg-white border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-orange/10 w-64" placeholder="Search prompts...">
+                    </div>
+                    ${can ? `<button id="btn-create-p" class="btn-orange px-6 py-2.5 rounded-xl font-bold text-sm flex items-center gap-2"><i data-lucide="plus" class="h-4 w-4"></i> Create Prompt</button>` : ''}
+                  </div>
+                </div>
+
+                ${state.prompts.length > 0 ? `
+                  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" id="prompt-grid"></div>
+                ` : `
+                  <div class="flex flex-col items-center justify-center py-20 bg-white rounded-[32px] border border-dashed border-slate-200">
+                    <div class="w-16 h-16 bg-slate-50 rounded-2xl flex items-center justify-center mb-4 text-slate-300"><i data-lucide="sparkles" class="h-8 w-8"></i></div>
+                    <p class="font-bold text-slate-500">No prompts found</p>
+                    <p class="text-sm text-slate-400">Try adjusting your search or create a new one</p>
+                  </div>
+                `}
               </div>
             `;
+
+            // Attach Search Event
+            const searchInp = document.getElementById('input-search-main');
+            if (searchInp) {
+              searchInp.addEventListener('input', (e) => {
+                state.searchQuery = e.target.value;
+                clearTimeout(window.searchTimeout);
+                window.searchTimeout = setTimeout(async () => { await loadPromptsData(); }, 300);
+              });
+            }
+
+            // Attach Create Event
             document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isEditingNew = true; state.selectedPromptId = null; render(); });
+
+            // Render Prompt Cards
+            const grid = document.getElementById('prompt-grid');
+            if (grid) {
+              state.prompts.forEach(p => {
+                const card = utils.createElement(`
+                  <div class="card-premium cursor-pointer group relative flex flex-col h-full">
+                    <div class="flex-1">
+                      <div class="flex justify-between items-start mb-4">
+                        <div class="w-10 h-10 rounded-lg bg-orange-50 text-brand-orange flex items-center justify-center mb-2"><i data-lucide="file-text" class="h-5 w-5"></i></div>
+                        ${can ? `<button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>` : ''}
+                      </div>
+                      <h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors line-clamp-1">${p.title}</h3>
+                      <p class="text-xs text-slate-400 font-medium line-clamp-3 mb-4 leading-relaxed">${p.content || ''}</p>
+                    </div>
+                    <div class="pt-4 mt-auto border-t border-slate-50 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-300">
+                      <span>Ref: #${p.id.split('-')[0]}</span>
+                      <span class="flex items-center gap-1"><i data-lucide="clock" class="h-3 w-3"></i> Updated</span>
+                    </div>
+                  </div>
+                `);
+
+                card.onclick = (e) => {
+                  if (e.target.closest('.btn-del-p')) return;
+                  state.selectedPromptId = p.id;
+                  state.isEditingNew = false;
+                  render();
+                };
+
+                const delBtn = card.querySelector('.btn-del-p');
+                if (delBtn) {
+                  delBtn.onclick = async (e) => {
+                    e.stopPropagation();
+                    if (confirm("Xóa prompt này?")) {
+                      await api.deletePrompt(p.id);
+                      if (state.selectedPromptId === p.id) state.selectedPromptId = null;
+                      await loadPromptsData();
+                    }
+                  };
+                }
+                grid.appendChild(card);
+              });
+            }
           }
         }
 
-        function updatePromptsSidebar() {
-          const s = document.getElementById('prompts-sidebar');
-          if (!s) return;
-          if (!state.selectedTopicId) { s.classList.add('hidden'); return; }
-          s.classList.remove('hidden');
-          const l = document.getElementById('prompt-list');
-          l.innerHTML = '';
-          state.prompts.forEach(p => {
-            const can = state.currentRole === 'edit' || state.isSuperAdmin;
-            const b = utils.createElement(`
-               <div class="group relative">
-                 <div class="bg-white p-4 rounded-xl border ${state.selectedPromptId === p.id ? 'border-brand-orange shadow-md' : 'border-slate-100'} hover:border-brand-orange cursor-pointer transition-all shadow-sm">
-                   <h4 class="text-xs font-bold text-slate-800 mb-1 truncate">${p.title}</h4>
-                   <p class="text-[10px] text-slate-400 line-clamp-2">${p.content || ''}</p>
-                 </div>
-                 ${can ? `<button class="btn-del-p absolute right-2 top-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-3 w-3"></i></button>` : ''}
-               </div>
-            `);
-            b.querySelector('div').onclick = () => { state.selectedPromptId = p.id; state.isEditingNew = false; render(); };
-            const del = b.querySelector('.btn-del-p');
-            if (del) del.onclick = async (e) => {
-              e.stopPropagation();
-              if (confirm("Xóa prompt này?")) { await api.deletePrompt(p.id); if (state.selectedPromptId === p.id) state.selectedPromptId = null; await loadPromptsData(); }
-            };
-            l.appendChild(b);
-          });
-        }
+        function updatePromptsSidebar() { }
 
         function renderPromptDetailHTML(p) {
           const canEdit = state.currentRole === 'edit' || state.isSuperAdmin;
