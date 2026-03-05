@@ -151,6 +151,7 @@
         const SUPABASE_URL = 'https://yhrxfnjpgurchgzvjtqw.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlocnhmbmpwZ3VyY2hnenZqdHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1OTU4MjQsImV4cCI6MjA4ODE3MTgyNH0.ig6y9DCHNX-nyN3Rt48Dp7FGA-ZpAqMkFjSmzsAKREw';
 
+        const appDiv = document.getElementById('app');
         let supabase;
         try {
           supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
@@ -281,9 +282,9 @@
 
         // --- Render Engine ---
         function render() {
-          if (state.view !== lastView) {
+          if (state.view !== appDiv.dataset.view) {
             appDiv.innerHTML = '';
-            lastView = state.view;
+            appDiv.dataset.view = state.view;
             if (state.view === 'loading') appDiv.innerHTML = renderLoading();
             else if (state.view === 'landing') appDiv.appendChild(renderLanding());
             else if (state.view === 'app') appDiv.appendChild(renderMainAppSkeleton());
@@ -693,7 +694,7 @@
         }
 
         function renderAdminPanel() {
-          const el = createElement(`
+          const el = utils.createElement(`
           <div class="min-h-screen bg-white p-10 overflow-y-auto w-full">
             <div class="max-w-6xl mx-auto">
               <div class="flex items-center justify-between mb-16">
