@@ -109,6 +109,8 @@ const state = {
   view: 'loading',
   currentRole: null, // role in the selected market ('view' or 'edit' or 'superadmin')
   isEditingNew: false,
+  isCreatingTopic: false,
+  newTopicName: '',
 };
 
 const appDiv = document.getElementById('app');
@@ -191,6 +193,8 @@ async function loadMarketData() {
   state.topics = await api.getTopics(state.selectedMarketId);
   state.selectedPromptId = null;
   state.isEditingNew = false;
+  state.isCreatingTopic = false;
+  state.newTopicName = '';
 
   await loadPromptsData();
 }
@@ -332,6 +336,16 @@ function renderMainApp() {
             </button>
           ` : ''}
         </div>
+        ${(state.currentRole === 'edit' || state.currentRole === 'superadmin') && state.isCreatingTopic ? `
+          <div class="p-3 border-b border-slate-200 bg-white space-y-2">
+            <label for="input-new-topic" class="text-xs font-medium text-slate-500">New topic name</label>
+            <input id="input-new-topic" type="text" value="${escapeHtml(state.newTopicName)}" placeholder="Enter topic name..." class="block w-full border border-slate-300 rounded-lg shadow-sm py-2 px-3 focus:outline-none focus:ring-brand-500 focus:border-brand-500 text-sm bg-white">
+            <div class="flex gap-2">
+              <button id="btn-save-topic" class="flex-1 inline-flex justify-center items-center px-3 py-1.5 bg-brand-600 text-white rounded-lg text-sm font-medium hover:bg-brand-700 transition-colors">Create</button>
+              <button id="btn-cancel-add-topic" class="flex-1 inline-flex justify-center items-center px-3 py-1.5 bg-slate-100 text-slate-600 rounded-lg text-sm font-medium hover:bg-slate-200 transition-colors">Cancel</button>
+            </div>
+          </div>
+        ` : ''}
         <div class="flex-1 overflow-y-auto p-2" id="topic-list"></div>
       </aside>
       
@@ -477,12 +491,39 @@ function renderMainApp() {
       }, 300);
     });
 
-    document.getElementById('btn-add-topic')?.addEventListener('click', async () => {
-      const name = prompt("Enter new topic name:");
-      if (name) {
-        await supabase.from('topics').insert({ market_id: state.selectedMarketId, name });
-        await loadMarketData();
-      }
+    document.getElementById('btn-add-topic')?.addEventListener('click', () => {
+      state.isCreatingTopic = true;
+      state.newTopicName = '';
+      render();
+    });
+
+    const newTopicInput = document.getElementById('input-new-topic');
+    if (newTopicInput) {
+      newTopicInput.focus();
+      newTopicInput.addEventListener('input', (e) => {
+        state.newTopicName = e.target.value;
+      });
+      newTopicInput.addEventListener('keydown', async (e) => {
+        if (e.key === 'Enter') {
+          e.preventDefault();
+          document.getElementById('btn-save-topic')?.click();
+        }
+      });
+    }
+
+    document.getElementById('btn-cancel-add-topic')?.addEventListener('click', () => {
+      state.isCreatingTopic = false;
+      state.newTopicName = '';
+      render();
+    });
+
+    document.getElementById('btn-save-topic')?.addEventListener('click', async () => {
+      const name = state.newTopicName.trim();
+      if (!name) return;
+      await supabase.from('topics').insert({ market_id: state.selectedMarketId, name });
+      state.isCreatingTopic = false;
+      state.newTopicName = '';
+      await loadMarketData();
     });
 
     if (window.lucide) window.lucide.createIcons();
