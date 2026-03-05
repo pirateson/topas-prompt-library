@@ -173,7 +173,8 @@
           isEditingNew: false,
           isCreatingTopic: false,
           newTopicName: '',
-          currentRole: null
+          currentRole: null,
+          sortBy: 'newest'
         };
 
         // --- API ---
@@ -276,7 +277,15 @@
         }
 
         async function loadPromptsData() {
-          state.prompts = await api.getPrompts(state.selectedMarketId, state.selectedTopicId, state.searchQuery);
+          let data = await api.getPrompts(state.selectedMarketId, state.selectedTopicId, state.searchQuery);
+
+          // Client-side sorting
+          if (state.sortBy === 'az') data.sort((a, b) => a.title.localeCompare(b.title));
+          else if (state.sortBy === 'za') data.sort((a, b) => b.title.localeCompare(a.title));
+          else if (state.sortBy === 'newest') data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+          else if (state.sortBy === 'oldest') data.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
+          state.prompts = data;
           render();
         }
 
@@ -581,6 +590,15 @@
                   </div>
                   <div class="flex items-center gap-3">
                     <div class="relative">
+                      <select id="sel-sort" class="appearance-none bg-white border border-slate-200 rounded-xl py-2.5 pl-4 pr-10 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-orange/10 cursor-pointer">
+                        <option value="newest" ${state.sortBy === 'newest' ? 'selected' : ''}>Newest First</option>
+                        <option value="oldest" ${state.sortBy === 'oldest' ? 'selected' : ''}>Oldest First</option>
+                        <option value="az" ${state.sortBy === 'az' ? 'selected' : ''}>Name A-Z</option>
+                        <option value="za" ${state.sortBy === 'za' ? 'selected' : ''}>Name Z-A</option>
+                      </select>
+                      <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none"></i>
+                    </div>
+                    <div class="relative">
                       <i data-lucide="search" class="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-300"></i>
                       <input type="text" id="input-search-main" value="${state.searchQuery || ''}" class="bg-white border border-slate-200 rounded-xl py-2.5 pl-10 pr-4 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-orange/10 w-64" placeholder="Search prompts...">
                     </div>
@@ -599,6 +617,15 @@
                 `}
               </div>
             `;
+
+            // Attach Sort Event
+            const sortSel = document.getElementById('sel-sort');
+            if (sortSel) {
+              sortSel.onchange = async (e) => {
+                state.sortBy = e.target.value;
+                await loadPromptsData();
+              };
+            }
 
             // Attach Search Event
             const searchInp = document.getElementById('input-search-main');
@@ -664,11 +691,15 @@
           const canEdit = state.currentRole === 'edit' || state.isSuperAdmin;
           return `
           <div class="max-w-4xl w-full mx-auto fade-in">
-            <div class="flex justify-between items-start mb-10">
+            <div class="flex items-center gap-4 mb-10">
+              <button id="btn-back-to-list" class="p-2 hover:bg-slate-50 rounded-xl transition-all"><i data-lucide="arrow-left" class="h-6 w-6 text-slate-400"></i></button>
               <div>
                 <div class="bg-orange-50 text-brand-orange text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg inline-block mb-3">${state.topics.find(t => t.id === p.topic_id)?.name}</div>
                 <h1 class="text-4xl font-black tracking-tight text-brand-dark mb-4">${p.title}</h1>
               </div>
+            </div>
+            <div class="flex justify-between items-start mb-6">
+              <div></div>
               <div class="flex gap-2">
                 <button id="btn-copy-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-slate-50"><i data-lucide="copy" class="h-4 w-4"></i> Copy</button>
                 ${canEdit ? `<button id="btn-edit-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-50"><i data-lucide="edit-3" class="h-4 w-4"></i> Edit</button>` : ''}
@@ -681,6 +712,10 @@
         }
 
         function attachDetailEvents(p) {
+          document.getElementById('btn-back-to-list').onclick = () => {
+            state.selectedPromptId = null;
+            render();
+          };
           document.getElementById('btn-copy-main').onclick = () => {
             navigator.clipboard.writeText(p.content);
             const b = document.getElementById('btn-copy-main'); b.innerHTML = `<i data-lucide="check" class="h-4 w-4 text-green-500"></i> Copied!`;
