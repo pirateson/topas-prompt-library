@@ -112,6 +112,16 @@
     section {
       scroll-margin-top: 80px;
     }
+
+    .smooth-transition {
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    }
+
+    .loading-overlay {
+      background: rgba(255, 255, 255, 0.7);
+      backdrop-filter: blur(4px);
+      z-index: 1000;
+    }
   </style>
 
   <script>
@@ -164,8 +174,6 @@
           newTopicName: '',
           currentRole: null
         };
-
-        const appDiv = document.getElementById('app');
 
         // --- API ---
         const api = {
@@ -254,11 +262,9 @@
 
         async function loadMarketData() {
           if (!state.selectedMarketId) { render(); return; }
-          if (state.isSuperAdmin) state.currentRole = 'superadmin';
-          else {
-            const r = state.userRoles.find(r => r.market_id === state.selectedMarketId);
-            state.currentRole = r ? r.role : 'view';
-          }
+          const r = state.userRoles.find(r => r.market_id === state.selectedMarketId);
+          state.currentRole = state.isSuperAdmin ? 'superadmin' : (r ? r.role : 'view');
+
           state.topics = await api.getTopics(state.selectedMarketId);
           state.selectedPromptId = null;
           state.selectedTopicId = null;
@@ -273,33 +279,31 @@
           render();
         }
 
-        // --- Render Functions ---
+        // --- Render Engine ---
         function render() {
-          appDiv.innerHTML = '';
-          let content = '';
-          if (state.view === 'loading') content = renderLoading();
-          else if (state.view === 'landing') content = renderLanding();
-          else if (state.view === 'app') content = renderMainApp();
-          else if (state.view === 'admin') content = renderAdminPanel();
+          if (state.view !== lastView) {
+            appDiv.innerHTML = '';
+            lastView = state.view;
+            if (state.view === 'loading') appDiv.innerHTML = renderLoading();
+            else if (state.view === 'landing') appDiv.appendChild(renderLanding());
+            else if (state.view === 'app') appDiv.appendChild(renderMainAppSkeleton());
+            else if (state.view === 'admin') appDiv.appendChild(renderAdminPanel());
+          }
 
-          if (typeof content === 'string') appDiv.innerHTML = content;
-          else if (content) appDiv.appendChild(content);
+          if (state.view === 'app') {
+            updateAppUI();
+          }
 
           if (window.lucide) try { window.lucide.createIcons(); } catch (e) { }
         }
 
-        function createElement(html) {
-          const d = document.createElement('div');
-          d.innerHTML = html.trim();
-          return d.firstChild;
-        }
 
         function renderLoading() {
           return `<div class="flex h-screen items-center justify-center bg-white"><div class="flex flex-col items-center gap-4"><i data-lucide="loader-2" class="h-10 w-10 animate-spin text-brand-orange"></i><p class="font-bold text-slate-400 uppercase tracking-widest text-xs">Synchronizing Library...</p></div></div>`;
         }
 
         function renderLanding() {
-          const el = createElement(`
+          const el = utils.createElement(`
           <div class="min-h-screen hero-gradient">
             <header class="glass-header fixed top-0 w-full z-50 border-b border-black/5">
               <nav class="max-w-7xl mx-auto px-6 h-20 flex items-center justify-between">
@@ -387,68 +391,30 @@
           return el;
         }
 
-        function renderMainApp() {
+        function renderMainAppSkeleton() {
           const el = document.createElement('div');
-          el.className = 'flex flex-col h-screen fade-in bg-[#fcfcfc]';
+          el.className = 'flex flex-col h-screen bg-[#fcfcfc]';
           el.innerHTML = `
           <header class="bg-white border-b border-black/5 h-16 flex-shrink-0 z-50">
-            <div class="px-6 h-full flex items-center justify-between">
-              <div class="flex items-center gap-2">
-                <div class="bg-brand-orange p-1.5 rounded-lg text-white"><i data-lucide="library" class="h-5 w-5"></i></div>
-                <span class="font-bold text-lg tracking-tight">Topas <span class="text-brand-orange">Library</span></span>
-              </div>
-              <div class="flex items-center gap-4">
-                ${state.isSuperAdmin ? `<button id="btn-admin" class="flex items-center gap-2 text-sm font-bold text-slate-600 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all"><i data-lucide="shield" class="h-4 w-4"></i> Admin Panel</button>` : ''}
-                <div class="relative group cursor-pointer">
-                  <div class="h-10 w-10 rounded-full bg-brand-orange/10 flex items-center justify-center text-brand-orange font-bold border border-brand-orange/20 overflow-hidden">
-                    ${state.user.user_metadata?.avatar_url ? `<img src="${state.user.user_metadata.avatar_url}" class="h-full w-full">` : state.user.email.charAt(0).toUpperCase()}
-                  </div>
-                  <div class="hidden group-hover:block absolute right-0 w-64 mt-2 bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 z-[60] overflow-hidden">
-                    <div class="p-4 border-b border-slate-50"><p class="text-sm font-bold truncate">${state.user.name || 'User'}</p><p class="text-xs text-slate-400 truncate">${state.user.email}</p></div>
-                    <div class="p-2 text-sm font-medium"><button id="btn-logout" class="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors">Sign out</button></div>
-                  </div>
-                </div>
-              </div>
-            </div>
+            <div class="px-6 h-full flex items-center justify-between" id="header-content"></div>
           </header>
 
           <div class="flex flex-1 overflow-hidden">
             <aside class="w-72 border-r border-black/5 bg-white flex flex-col flex-shrink-0">
               <div class="p-6">
                 <label class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 mb-2 block">Current Market</label>
-                <select id="sel-market-sidebar" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-orange/20 outline-none appearance-none cursor-pointer">
-                   ${state.markets.map(m => `<option value="${m.id}" ${state.selectedMarketId === m.id ? 'selected' : ''}>${m.name}</option>`).join('')}
-                </select>
+                <select id="sel-market-sidebar" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-4 py-3 text-sm font-bold focus:ring-2 focus:ring-brand-orange/20 outline-none appearance-none cursor-pointer"></select>
               </div>
-
               <div class="px-6 pb-2"><div class="h-px bg-slate-50 w-full"></div></div>
-
-              <div class="px-4 py-4 space-y-1" id="nav-list">
-                <button id="btn-all-topics" class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${!state.selectedTopicId ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
-                  <i data-lucide="grid" class="h-4 w-4"></i> All Categories
-                </button>
+              <div class="px-4 py-4 space-y-1 overflow-y-auto flex-1 no-scrollbar">
+                <button id="btn-all-topics" class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all"></button>
                 <div class="pt-4 px-4"><span class="text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Topic Area</span></div>
                 <div id="topic-list" class="space-y-1"></div>
               </div>
-              
-              ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `
-                <div class="mt-auto p-4 space-y-3">
-                  ${state.isCreatingTopic ? `
-                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
-                      <label for="input-new-topic" class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">New Category Name</label>
-                      <input id="input-new-topic" type="text" value="${state.newTopicName}" placeholder="Enter category name..." class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-orange/20 focus:border-brand-orange/30">
-                      <div class="flex gap-2">
-                        <button id="btn-save-topic" class="flex-1 btn-orange py-2 rounded-xl text-xs font-bold">Create</button>
-                        <button id="btn-cancel-add-topic" class="flex-1 bg-white border border-slate-200 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
-                      </div>
-                    </div>
-                  ` : ''}
-                  <button id="btn-add-topic" class="w-full border-2 border-dashed border-slate-100 py-3 rounded-2xl text-xs font-bold text-slate-400 hover:border-brand-orange/20 hover:text-brand-orange transition-all flex items-center justify-center gap-2"><i data-lucide="plus-circle" class="h-4 w-4"></i> Add New Topic</button>
-                </div>
-              ` : ''}
+              <div id="sidebar-footer" class="p-4 space-y-3"></div>
             </aside>
 
-            <main class="flex-1 overflow-y-auto bg-[#fafafa] flex flex-col pt-8 px-8" id="main-content"></main>
+            <main class="flex-1 overflow-y-auto bg-[#fafafa] flex flex-col pt-8 px-8 no-scrollbar" id="main-content"></main>
             
             <aside id="prompts-sidebar" class="w-80 border-l border-black/5 bg-white flex flex-col flex-shrink-0 hidden">
               <div class="p-4 border-b border-slate-50">
@@ -457,30 +423,92 @@
                   <input type="text" id="input-search" class="w-full bg-slate-50 border-none rounded-lg py-2 pl-9 pr-4 text-xs font-medium outline-none" placeholder="Filter prompts...">
                 </div>
               </div>
-              <div class="flex-1 overflow-y-auto p-4 space-y-2" id="prompt-list"></div>
+              <div class="flex-1 overflow-y-auto p-4 space-y-2 no-scrollbar" id="prompt-list"></div>
             </aside>
           </div>
         `;
+          return el;
+        }
 
-          setTimeout(() => {
-            document.getElementById('sel-market-sidebar').onchange = async (e) => { state.selectedMarketId = e.target.value; await loadMarketData(); };
-            document.getElementById('btn-all-topics').onclick = () => { state.selectedTopicId = null; state.selectedPromptId = null; state.isEditingNew = false; render(); };
+        const utils = {
+          createElement(h) { const d = document.createElement('div'); d.innerHTML = h.trim(); return d.firstChild; },
+          async withLoading(btn, fn) {
+            if (!btn) return fn();
+            const orig = btn.innerHTML;
+            const origDis = btn.disabled;
+            btn.disabled = true;
+            btn.innerHTML = `<i data-lucide="loader-2" class="h-4 w-4 animate-spin mx-auto text-current"></i>`;
+            if (window.lucide) window.lucide.createIcons();
+            try { await fn(); } finally { btn.disabled = origDis; btn.innerHTML = orig; if (window.lucide) window.lucide.createIcons(); }
+          }
+        };
 
-            const topicList = document.getElementById('topic-list');
+        function updateAppUI() {
+          updateHeader();
+          updateSidebar();
+          updateMainContent();
+          updatePromptsSidebar();
+          if (window.lucide) window.lucide.createIcons();
+        }
+
+        function updateHeader() {
+          const h = document.getElementById('header-content');
+          if (!h) return;
+          if (h.dataset.rendered === 'true') return;
+          h.innerHTML = `
+            <div class="flex items-center gap-2">
+              <div class="bg-brand-orange p-1.5 rounded-lg text-white"><i data-lucide="library" class="h-5 w-5"></i></div>
+              <span class="font-bold text-lg tracking-tight">Topas <span class="text-brand-orange">Library</span></span>
+            </div>
+            <div class="flex items-center gap-4">
+              ${state.isSuperAdmin ? `<button id="btn-admin" class="flex items-center gap-2 text-sm font-bold text-slate-600 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all"><i data-lucide="shield" class="h-4 w-4"></i> Admin Panel</button>` : ''}
+              <div class="relative group cursor-pointer">
+                <div class="h-10 w-10 rounded-full bg-brand-orange/10 flex items-center justify-center text-brand-orange font-bold border border-brand-orange/20 overflow-hidden">
+                  ${state.user.user_metadata?.avatar_url ? `<img src="${state.user.user_metadata.avatar_url}" class="h-full w-full">` : state.user.email.charAt(0).toUpperCase()}
+                </div>
+                <div class="hidden group-hover:block absolute right-0 w-64 mt-2 bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 z-[60] overflow-hidden">
+                  <div class="p-4 border-b border-slate-50"><p class="text-sm font-bold truncate">${state.user.name || 'User'}</p><p class="text-xs text-slate-400 truncate">${state.user.email}</p></div>
+                  <div class="p-2 text-sm font-medium"><button id="btn-logout" class="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors">Sign out</button></div>
+                </div>
+              </div>
+            </div>
+          `;
+          h.dataset.rendered = 'true';
+          document.getElementById('btn-logout').onclick = () => supabase.auth.signOut();
+          document.getElementById('btn-admin')?.addEventListener('click', () => { state.view = 'admin'; render(); });
+        }
+
+        function updateSidebar() {
+          const ms = document.getElementById('sel-market-sidebar');
+          if (ms) {
+            ms.innerHTML = state.markets.map(m => `<option value="${m.id}" ${state.selectedMarketId === m.id ? 'selected' : ''}>${m.name}</option>`).join('');
+            ms.onchange = async (e) => { state.selectedMarketId = e.target.value; await loadMarketData(); };
+          }
+
+          const bal = document.getElementById('btn-all-topics');
+          if (bal) {
+            bal.innerHTML = `<i data-lucide="grid" class="h-4 w-4"></i> All Categories`;
+            bal.className = `w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${!state.selectedTopicId ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}`;
+            bal.onclick = () => { state.selectedTopicId = null; state.selectedPromptId = null; state.isEditingNew = false; render(); };
+          }
+
+          const tl = document.getElementById('topic-list');
+          if (tl) {
+            tl.innerHTML = '';
             state.topics.forEach(t => {
               const isSel = state.selectedTopicId === t.id;
-              const canManage = state.currentRole === 'edit' || state.isSuperAdmin;
-              const b = createElement(`
-              <div class="group relative">
-                <button class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${isSel ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
-                  <i data-lucide="folder" class="h-4 w-4"></i> ${t.name}
-                </button>
-                ${canManage ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
-              </div>
-            `);
-              b.querySelector('button:first-child').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
-              const delBtn = b.querySelector('.btn-del-topic');
-              if (delBtn) delBtn.onclick = async (e) => {
+              const can = state.currentRole === 'edit' || state.isSuperAdmin;
+              const b = utils.createElement(`
+                <div class="group relative">
+                  <button class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${isSel ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
+                    <i data-lucide="folder" class="h-4 w-4"></i> ${t.name}
+                  </button>
+                  ${can ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
+                </div>
+              `);
+              b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
+              const db = b.querySelector('.btn-del-topic');
+              if (db) db.onclick = async (e) => {
                 e.stopPropagation();
                 if (confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
                   await supabase.from('topics').delete().eq('id', t.id);
@@ -488,107 +516,108 @@
                   await loadMarketData();
                 }
               };
-              topicList.appendChild(b);
+              tl.appendChild(b);
             });
+          }
 
-            const main = document.getElementById('main-content');
-            const pSidebar = document.getElementById('prompts-sidebar');
-            const isOverview = !state.selectedTopicId;
+          const sf = document.getElementById('sidebar-footer');
+          if (sf) {
+            const can = state.currentRole === 'edit' || state.isSuperAdmin;
+            if (can) {
+              const footerHtml = state.isCreatingTopic ? `
+                <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2 fade-in">
+                  <label for="input-new-topic" class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">New Category Name</label>
+                  <input id="input-new-topic" type="text" value="${state.newTopicName}" placeholder="Name..." class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold outline-none focus:ring-2 focus:ring-brand-orange/20">
+                  <div class="flex gap-2">
+                    <button id="btn-save-topic" class="flex-1 btn-orange py-2 rounded-xl text-xs font-bold">Create</button>
+                    <button id="btn-cancel-add-topic" class="flex-1 bg-white border border-slate-200 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                  </div>
+                </div>
+              ` : `<button id="btn-add-topic" class="w-full border-2 border-dashed border-slate-100 py-3 rounded-2xl text-xs font-bold text-slate-400 hover:border-brand-orange/20 hover:text-brand-orange transition-all flex items-center justify-center gap-2"><i data-lucide="plus-circle" class="h-4 w-4"></i> Add New Topic</button>`;
 
-            if (isOverview) {
-              pSidebar.classList.add('hidden');
-              main.innerHTML = `
-              <div class="mb-10"><h2 class="text-3xl font-black tracking-tight text-brand-dark">Market Overview</h2><p class="text-slate-400 font-medium">Select a category to explore prompts</p></div>
-              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20">
-                ${state.topics.map(t => `<div class="card-premium cursor-pointer group" onclick="window.setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
+              if (sf.innerHTML !== footerHtml.trim()) {
+                sf.innerHTML = footerHtml;
+                document.getElementById('btn-add-topic')?.addEventListener('click', () => { state.isCreatingTopic = true; state.newTopicName = ''; render(); });
+                document.getElementById('btn-cancel-add-topic')?.addEventListener('click', () => { state.isCreatingTopic = false; render(); });
+                const inp = document.getElementById('input-new-topic');
+                if (inp) {
+                  inp.focus();
+                  inp.oninput = (e) => state.newTopicName = e.target.value;
+                  inp.onkeydown = (e) => { if (e.key === 'Enter') document.getElementById('btn-save-topic').click(); };
+                }
+                document.getElementById('btn-save-topic')?.addEventListener('click', async (e) => {
+                  const n = state.newTopicName.trim();
+                  if (!n) return;
+                  await utils.withLoading(e.target, async () => {
+                    await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n });
+                    state.isCreatingTopic = false;
+                    state.newTopicName = '';
+                    await loadMarketData();
+                  });
+                });
+              }
+            } else { sf.innerHTML = ''; }
+          }
+        }
+
+        function updateMainContent() {
+          const m = document.getElementById('main-content');
+          if (!m) return;
+          const isO = !state.selectedTopicId;
+          if (isO) {
+            m.innerHTML = `
+              <div class="mb-10 fade-in"><h2 class="text-3xl font-black tracking-tight text-brand-dark">Market Overview</h2><p class="text-slate-400 font-medium">Select a category to explore prompts</p></div>
+              <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20 fade-in">
+                ${state.topics.map(t => `<div class="card-premium cursor-pointer group" onclick="setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
               </div>
             `;
-            } else {
-              pSidebar.classList.remove('hidden');
-              const activeT = state.topics.find(t => t.id === state.selectedTopicId);
-
-              if (state.isEditingNew) {
-                main.innerHTML = renderPromptEditorHTML();
-                attachEditorEvents();
-              } else if (state.selectedPromptId) {
-                const p = state.prompts.find(pr => pr.id === state.selectedPromptId);
-                if (p) {
-                  main.innerHTML = renderPromptDetailHTML(p);
-                  attachDetailEvents(p);
-                }
-              } else {
-                main.innerHTML = `
-                  <div class="flex-1 flex flex-col items-center justify-center text-slate-300">
-                    <div class="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-6"><i data-lucide="sparkles" class="h-10 w-10 text-orange-200"></i></div>
-                    <p class="text-slate-500 font-bold text-lg mb-2">${activeT?.name}</p>
-                    <p class="text-sm text-slate-400 mb-6">Select a prompt from the sidebar or</p>
-                    ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `<button id="btn-create-p" class="btn-orange px-6 py-2.5 rounded-xl font-bold text-sm">Create New Prompt</button>` : ''}
-                  </div>
-                `;
-                document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isEditingNew = true; state.selectedPromptId = null; render(); });
-              }
-
-              const pList = document.getElementById('prompt-list');
-              state.prompts.forEach(p => {
-                const canManage = state.currentRole === 'edit' || state.isSuperAdmin;
-                const b = createElement(`
-                 <div class="group relative">
-                   <div class="bg-white p-4 rounded-xl border ${state.selectedPromptId === p.id ? 'border-brand-orange shadow-md' : 'border-slate-100'} hover:border-brand-orange cursor-pointer transition-all shadow-sm">
-                     <h4 class="text-xs font-bold text-slate-800 mb-1 truncate">${p.title}</h4>
-                     <p class="text-[10px] text-slate-400 line-clamp-2">${p.content || ''}</p>
-                   </div>
-                   ${canManage ? `<button class="btn-del-p absolute right-2 top-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-3 w-3"></i></button>` : ''}
-                 </div>
-               `);
-                b.querySelector('div').onclick = () => { state.selectedPromptId = p.id; state.isEditingNew = false; render(); };
-                const delBtn = b.querySelector('.btn-del-p');
-                if (delBtn) delBtn.onclick = async (e) => {
-                  e.stopPropagation();
-                  if (confirm("Xóa prompt này?")) {
-                    await api.deletePrompt(p.id);
-                    if (state.selectedPromptId === p.id) state.selectedPromptId = null;
-                    await loadPromptsData();
-                  }
-                };
-                pList.appendChild(b);
-              });
-            }
-
             window.setTopic = async (tid) => { state.selectedTopicId = tid; await loadPromptsData(); };
-            document.getElementById('btn-logout').onclick = () => supabase.auth.signOut();
-            document.getElementById('btn-admin')?.addEventListener('click', () => { state.view = 'admin'; render(); });
-            document.getElementById('btn-add-topic')?.addEventListener('click', () => {
-              state.isCreatingTopic = true;
-              state.newTopicName = '';
-              render();
-            });
-            const newTopicInput = document.getElementById('input-new-topic');
-            if (newTopicInput) {
-              newTopicInput.focus();
-              newTopicInput.addEventListener('input', (e) => { state.newTopicName = e.target.value; });
-              newTopicInput.addEventListener('keydown', (e) => {
-                if (e.key === 'Enter') {
-                  e.preventDefault();
-                  document.getElementById('btn-save-topic')?.click();
-                }
-              });
-            }
-            document.getElementById('btn-cancel-add-topic')?.addEventListener('click', () => {
-              state.isCreatingTopic = false;
-              state.newTopicName = '';
-              render();
-            });
-            document.getElementById('btn-save-topic')?.addEventListener('click', async () => {
-              const n = state.newTopicName.trim();
-              if (!n) return;
-              await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n });
-              state.isCreatingTopic = false;
-              state.newTopicName = '';
-              await loadMarketData();
-            });
-            if (window.lucide) window.lucide.createIcons();
-          }, 0);
-          return el;
+          } else if (state.isEditingNew) {
+            m.innerHTML = renderPromptEditorHTML();
+            attachEditorEvents();
+          } else if (state.selectedPromptId) {
+            const p = state.prompts.find(pr => pr.id === state.selectedPromptId);
+            if (p) { m.innerHTML = renderPromptDetailHTML(p); attachDetailEvents(p); }
+          } else {
+            const at = state.topics.find(t => t.id === state.selectedTopicId);
+            m.innerHTML = `
+              <div class="flex-1 flex flex-col items-center justify-center text-slate-300 fade-in">
+                <div class="w-20 h-20 bg-slate-50 rounded-3xl flex items-center justify-center mb-6"><i data-lucide="sparkles" class="h-10 w-10 text-orange-200"></i></div>
+                <p class="text-slate-500 font-bold text-lg mb-2">${at?.name}</p>
+                <p class="text-sm text-slate-400 mb-6">Select a prompt from the sidebar or</p>
+                ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `<button id="btn-create-p" class="btn-orange px-6 py-2.5 rounded-xl font-bold text-sm">Create New Prompt</button>` : ''}
+              </div>
+            `;
+            document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isEditingNew = true; state.selectedPromptId = null; render(); });
+          }
+        }
+
+        function updatePromptsSidebar() {
+          const s = document.getElementById('prompts-sidebar');
+          if (!s) return;
+          if (!state.selectedTopicId) { s.classList.add('hidden'); return; }
+          s.classList.remove('hidden');
+          const l = document.getElementById('prompt-list');
+          l.innerHTML = '';
+          state.prompts.forEach(p => {
+            const can = state.currentRole === 'edit' || state.isSuperAdmin;
+            const b = utils.createElement(`
+               <div class="group relative">
+                 <div class="bg-white p-4 rounded-xl border ${state.selectedPromptId === p.id ? 'border-brand-orange shadow-md' : 'border-slate-100'} hover:border-brand-orange cursor-pointer transition-all shadow-sm">
+                   <h4 class="text-xs font-bold text-slate-800 mb-1 truncate">${p.title}</h4>
+                   <p class="text-[10px] text-slate-400 line-clamp-2">${p.content || ''}</p>
+                 </div>
+                 ${can ? `<button class="btn-del-p absolute right-2 top-2 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-3 w-3"></i></button>` : ''}
+               </div>
+            `);
+            b.querySelector('div').onclick = () => { state.selectedPromptId = p.id; state.isEditingNew = false; render(); };
+            const del = b.querySelector('.btn-del-p');
+            if (del) del.onclick = async (e) => {
+              e.stopPropagation();
+              if (confirm("Xóa prompt này?")) { await api.deletePrompt(p.id); if (state.selectedPromptId === p.id) state.selectedPromptId = null; await loadPromptsData(); }
+            };
+            l.appendChild(b);
+          });
         }
 
         function renderPromptDetailHTML(p) {
