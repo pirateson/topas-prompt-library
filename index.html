@@ -160,6 +160,8 @@
           selectedPromptId: null,
           view: 'loading',
           isEditingNew: false,
+          isCreatingTopic: false,
+          newTopicName: '',
           currentRole: null
         };
 
@@ -261,6 +263,8 @@
           state.selectedPromptId = null;
           state.selectedTopicId = null;
           state.isEditingNew = false;
+          state.isCreatingTopic = false;
+          state.newTopicName = '';
           await loadPromptsData();
         }
 
@@ -428,7 +432,17 @@
               </div>
               
               ${(state.currentRole === 'edit' || state.isSuperAdmin) ? `
-                <div class="mt-auto p-4">
+                <div class="mt-auto p-4 space-y-3">
+                  ${state.isCreatingTopic ? `
+                    <div class="rounded-2xl border border-slate-200 bg-slate-50 p-3 space-y-2">
+                      <label for="input-new-topic" class="text-[10px] font-black uppercase tracking-[0.15em] text-slate-400">New Category Name</label>
+                      <input id="input-new-topic" type="text" value="${state.newTopicName}" placeholder="Enter category name..." class="w-full bg-white border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold text-slate-700 outline-none focus:ring-2 focus:ring-brand-orange/20 focus:border-brand-orange/30">
+                      <div class="flex gap-2">
+                        <button id="btn-save-topic" class="flex-1 btn-orange py-2 rounded-xl text-xs font-bold">Create</button>
+                        <button id="btn-cancel-add-topic" class="flex-1 bg-white border border-slate-200 py-2 rounded-xl text-xs font-bold text-slate-500 hover:bg-slate-50">Cancel</button>
+                      </div>
+                    </div>
+                  ` : ''}
                   <button id="btn-add-topic" class="w-full border-2 border-dashed border-slate-100 py-3 rounded-2xl text-xs font-bold text-slate-400 hover:border-brand-orange/20 hover:text-brand-orange transition-all flex items-center justify-center gap-2"><i data-lucide="plus-circle" class="h-4 w-4"></i> Add New Topic</button>
                 </div>
               ` : ''}
@@ -543,9 +557,34 @@
             window.setTopic = async (tid) => { state.selectedTopicId = tid; await loadPromptsData(); };
             document.getElementById('btn-logout').onclick = () => supabase.auth.signOut();
             document.getElementById('btn-admin')?.addEventListener('click', () => { state.view = 'admin'; render(); });
-            document.getElementById('btn-add-topic')?.addEventListener('click', async () => {
-              const n = prompt("New Category Name:");
-              if (n) { await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n }); await loadMarketData(); }
+            document.getElementById('btn-add-topic')?.addEventListener('click', () => {
+              state.isCreatingTopic = true;
+              state.newTopicName = '';
+              render();
+            });
+            const newTopicInput = document.getElementById('input-new-topic');
+            if (newTopicInput) {
+              newTopicInput.focus();
+              newTopicInput.addEventListener('input', (e) => { state.newTopicName = e.target.value; });
+              newTopicInput.addEventListener('keydown', (e) => {
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  document.getElementById('btn-save-topic')?.click();
+                }
+              });
+            }
+            document.getElementById('btn-cancel-add-topic')?.addEventListener('click', () => {
+              state.isCreatingTopic = false;
+              state.newTopicName = '';
+              render();
+            });
+            document.getElementById('btn-save-topic')?.addEventListener('click', async () => {
+              const n = state.newTopicName.trim();
+              if (!n) return;
+              await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n });
+              state.isCreatingTopic = false;
+              state.newTopicName = '';
+              await loadMarketData();
             });
             if (window.lucide) window.lucide.createIcons();
           }, 0);
