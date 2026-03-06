@@ -244,11 +244,21 @@
             return data || [];
           },
           async deleteUser(userId) {
-            const { data, error } = await supabase.functions.invoke('delete-user', {
-              body: { userId }
-            });
-            if (error) throw error;
-            return data;
+            const res = await fetch(
+              "https://yhrxfnjpgurchgzvjtqw.supabase.co/functions/v1/delete-user",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type": "application/json",
+                  "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+                },
+                body: JSON.stringify({ userId })
+              }
+            )
+
+            const data = await res.json()
+            if (!res.ok) throw new Error(data.error || 'Failed to delete user')
+            return data
           }
         };
 
@@ -566,16 +576,21 @@
           document.getElementById('btn-logout').onclick = (e) => { e.stopPropagation(); supabase.auth.signOut(); };
           document.getElementById('btn-admin')?.addEventListener('click', (e) => { e.stopPropagation(); state.view = 'admin'; render(); });
 
-          const trigger = document.getElementById('user-menu-trigger');
-          const dropdown = document.getElementById('user-menu-dropdown');
+          const trigger = h.querySelector('#user-menu-trigger');
+          const dropdown = h.querySelector('#user-menu-dropdown');
           if (trigger && dropdown) {
             trigger.onclick = (e) => {
               e.stopPropagation();
               dropdown.classList.toggle('hidden');
             };
-            document.addEventListener('click', (e) => {
-              if (!trigger.contains(e.target)) dropdown.classList.add('hidden');
-            });
+            // Close dropdown when clicking outside
+            const outsideClick = (e) => {
+              if (!trigger.contains(e.target)) {
+                dropdown.classList.add('hidden');
+                document.removeEventListener('click', outsideClick);
+              }
+            };
+            document.addEventListener('click', outsideClick);
           }
         }
 

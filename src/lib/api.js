@@ -1,4 +1,4 @@
-import { supabase } from './supabase.js';
+import { supabase, SUPABASE_ANON_KEY } from './supabase.js';
 
 export async function getCurrentUser() {
     const { data: { session } } = await supabase.auth.getSession();
@@ -88,4 +88,22 @@ export async function getUsers() {
     const { data, error } = await supabase.from('users').select('*').order('created_at', { ascending: false });
     if (error) throw error;
     return data;
+}
+
+export async function deleteUser(userId) {
+    const res = await fetch(
+        "https://yhrxfnjpgurchgzvjtqw.supabase.co/functions/v1/delete-user",
+        {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+                "Authorization": `Bearer ${SUPABASE_ANON_KEY}`
+            },
+            body: JSON.stringify({ userId })
+        }
+    )
+
+    const data = await res.json()
+    if (!res.ok) throw new Error(data.error || 'Failed to delete user')
+    return data
 }
