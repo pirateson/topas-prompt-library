@@ -243,12 +243,12 @@
             const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
             return data || [];
           },
-          async deleteUser(id) {
-            // Delete roles first
-            await supabase.from('user_market_roles').delete().eq('user_id', id);
-            // Then delete the user record
-            const { error } = await supabase.from('users').delete().eq('id', id);
+          async deleteUser(userId) {
+            const { data, error } = await supabase.functions.invoke('delete-user', {
+              body: { userId }
+            });
             if (error) throw error;
+            return data;
           }
         };
 
@@ -551,11 +551,11 @@
             </div>
             <div class="flex items-center gap-4">
               ${state.isSuperAdmin ? `<button id="btn-admin" class="flex items-center gap-2 text-sm font-bold text-slate-600 border border-slate-200 px-4 py-2 rounded-xl hover:bg-slate-50 transition-all"><i data-lucide="shield" class="h-4 w-4"></i> Admin Panel</button>` : ''}
-              <div class="relative group cursor-pointer">
+              <div class="relative cursor-pointer" id="user-menu-trigger">
                 <div class="h-10 w-10 rounded-full bg-brand-orange/10 flex items-center justify-center text-brand-orange font-bold border border-brand-orange/20 overflow-hidden">
                   ${state.user.user_metadata?.avatar_url ? `<img src="${state.user.user_metadata.avatar_url}" class="h-full w-full">` : state.user.email.charAt(0).toUpperCase()}
                 </div>
-                <div class="hidden group-hover:block absolute right-0 w-64 mt-2 bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 z-[60] overflow-hidden">
+                <div id="user-menu-dropdown" class="hidden absolute right-0 w-64 mt-2 bg-white rounded-2xl shadow-2xl ring-1 ring-black/5 z-[60] overflow-hidden">
                   <div class="p-4 border-b border-slate-50"><p class="text-sm font-bold truncate">${state.user.name || 'User'}</p><p class="text-xs text-slate-400 truncate">${state.user.email}</p></div>
                   <div class="p-2 text-sm font-medium"><button id="btn-logout" class="w-full text-left px-4 py-2 text-red-500 hover:bg-red-50 rounded-xl transition-colors">Sign out</button></div>
                 </div>
@@ -563,8 +563,20 @@
             </div>
           `;
           h.dataset.rendered = 'true';
-          document.getElementById('btn-logout').onclick = () => supabase.auth.signOut();
-          document.getElementById('btn-admin')?.addEventListener('click', () => { state.view = 'admin'; render(); });
+          document.getElementById('btn-logout').onclick = (e) => { e.stopPropagation(); supabase.auth.signOut(); };
+          document.getElementById('btn-admin')?.addEventListener('click', (e) => { e.stopPropagation(); state.view = 'admin'; render(); });
+
+          const trigger = document.getElementById('user-menu-trigger');
+          const dropdown = document.getElementById('user-menu-dropdown');
+          if (trigger && dropdown) {
+            trigger.onclick = (e) => {
+              e.stopPropagation();
+              dropdown.classList.toggle('hidden');
+            };
+            document.addEventListener('click', (e) => {
+              if (!trigger.contains(e.target)) dropdown.classList.add('hidden');
+            });
+          }
         }
 
         function updateSidebar() {
