@@ -80,12 +80,10 @@
     @keyframes fadeIn {
       from {
         opacity: 0;
-        transform: translateY(10px);
       }
 
       to {
         opacity: 1;
-        transform: translateY(0);
       }
     }
 
@@ -145,11 +143,32 @@
 <body class="antialiased text-brand-dark">
   <div id="app"></div>
 
+  <!-- Custom Confirm Modal -->
+  <div id="custom-confirm-modal"
+    class="fixed inset-0 bg-slate-900/40 backdrop-blur-sm z-[200] hidden items-center justify-center p-4">
+    <div class="bg-white w-full max-w-[400px] rounded-[32px] shadow-2xl overflow-hidden fade-in">
+      <div class="p-8 text-center">
+        <div class="bg-red-50 w-16 h-16 rounded-2xl text-red-500 flex items-center justify-center mx-auto mb-6">
+          <i data-lucide="alert-triangle" class="h-8 w-8"></i>
+        </div>
+        <h3 class="text-2xl font-black mb-2">Are you sure?</h3>
+        <p id="confirm-message" class="text-slate-500 text-sm leading-relaxed"></p>
+      </div>
+      <div class="p-6 bg-slate-50 flex gap-3">
+        <button id="confirm-cancel"
+          class="flex-1 bg-white border border-slate-200 py-4 rounded-2xl text-sm font-bold text-slate-500 hover:bg-slate-100 transition-all">Cancel</button>
+        <button id="confirm-ok"
+          class="flex-1 btn-orange py-4 rounded-2xl text-sm font-bold shadow-lg shadow-orange-500/20">Confirm</button>
+      </div>
+    </div>
+  </div>
+
   <script>
       (function () {
         // --- Supabase Config ---
         const SUPABASE_URL = 'https://yhrxfnjpgurchgzvjtqw.supabase.co';
         const SUPABASE_ANON_KEY = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InlocnhmbmpwZ3VyY2hnenZqdHF3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzI1OTU4MjQsImV4cCI6MjA4ODE3MTgyNH0.ig6y9DCHNX-nyN3Rt48Dp7FGA-ZpAqMkFjSmzsAKREw';
+        const LARK_WEBHOOK_URL = 'https://open.larksuite.com/open-apis/bot/v2/hook/694caef5-0630-4ccc-a7ff-e3c9d015b118';
 
         const appDiv = document.getElementById('app');
         let supabase;
@@ -223,6 +242,13 @@
           async getUsers() {
             const { data } = await supabase.from('users').select('*').order('created_at', { ascending: false });
             return data || [];
+          },
+          async deleteUser(id) {
+            // Delete roles first
+            await supabase.from('user_market_roles').delete().eq('user_id', id);
+            // Then delete the user record
+            const { error } = await supabase.from('users').delete().eq('id', id);
+            if (error) throw error;
           }
         };
 
@@ -260,7 +286,48 @@
 
             state.view = 'app';
             await loadMarketData();
+
+            // Notify Lark if this is the first login
+            const notifyKey = `notified_lark_${user.id}`;
+            if (!localStorage.getItem(notifyKey)) {
+              await notifyLarkNewUser(user);
+              localStorage.setItem(notifyKey, 'true');
+            }
           } catch (e) { console.error(e); state.view = 'landing'; render(); }
+        }
+
+        async function notifyLarkNewUser(user) {
+          try {
+            const card = {
+              "msg_type": "interactive",
+              "card": {
+                "header": {
+                  "title": { "tag": "plain_text", "content": "🚀 Có tài khoản mới được tạo" },
+                  "template": "blue"
+                },
+                "elements": [
+                  {
+                    "tag": "div",
+                    "text": { "tag": "lark_md", "content": `**Email:** ${user.email}\n**Tên:** ${user.name || 'N/A'}` }
+                  },
+                  {
+                    "tag": "action",
+                    "actions": [{
+                      "tag": "button",
+                      "text": { "tag": "plain_text", "content": "Thiết lập quyền cho user" },
+                      "type": "primary",
+                      "url": window.location.href // Redirect to current site
+                    }]
+                  }
+                ]
+              }
+            };
+            await fetch(LARK_WEBHOOK_URL, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify(card)
+            });
+          } catch (e) { console.error("Lark notify failed:", e); }
         }
 
         async function loadMarketData() {
@@ -441,6 +508,28 @@
             btn.innerHTML = `<i data-lucide="loader-2" class="h-4 w-4 animate-spin mx-auto text-current"></i>`;
             if (window.lucide) window.lucide.createIcons();
             try { await fn(); } finally { btn.disabled = origDis; btn.innerHTML = orig; if (window.lucide) window.lucide.createIcons(); }
+          },
+          async confirm(message) {
+            return new Promise((resolve) => {
+              const modal = document.getElementById('custom-confirm-modal');
+              const msgEl = document.getElementById('confirm-message');
+              const okBtn = document.getElementById('confirm-ok');
+              const cancelBtn = document.getElementById('confirm-cancel');
+
+              msgEl.textContent = message;
+              modal.style.display = 'flex';
+              if (window.lucide) window.lucide.createIcons();
+
+              const cleanup = (val) => {
+                modal.style.display = 'none';
+                okBtn.onclick = null;
+                cancelBtn.onclick = null;
+                resolve(val);
+              };
+
+              okBtn.onclick = () => cleanup(true);
+              cancelBtn.onclick = () => cleanup(false);
+            });
           }
         };
 
@@ -512,7 +601,7 @@
                 const db = b.querySelector('.btn-del-topic');
                 if (db) db.onclick = async (e) => {
                   e.stopPropagation();
-                  if (confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
+                  if (await utils.confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
                     await supabase.from('topics').delete().eq('id', t.id);
                     if (state.selectedTopicId === t.id) state.selectedTopicId = null;
                     await loadMarketData();
@@ -570,7 +659,7 @@
           const isO = !state.selectedTopicId;
 
           // Optimization: Check what's currently rendered to avoid innerHTML flickering
-          const currentViewId = isO ? 'overview' : (state.isEditingNew ? 'editor-' + (state.selectedPromptId || 'new') : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery));
+          const currentViewId = isO ? 'overview-' + state.selectedMarketId : (state.isEditingNew ? 'editor-' + (state.selectedPromptId || 'new') : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery));
 
           if (m.dataset.currentViewId === currentViewId && !state.isEditingNew && !isO && !state.selectedPromptId) {
             // For list view, we still want to update the grid if prompts changed, but maybe not the whole header
@@ -707,7 +796,7 @@
             if (delBtn) {
               delBtn.onclick = async (e) => {
                 e.stopPropagation();
-                if (confirm("Xóa prompt này?")) {
+                if (await utils.confirm("Xóa prompt này?")) {
                   await api.deletePrompt(p.id);
                   if (state.selectedPromptId === p.id) state.selectedPromptId = null;
                   await loadPromptsData();
@@ -915,7 +1004,7 @@
 
           // Attach Listeners
           document.querySelectorAll('.btn-del-role').forEach(b => b.onclick = async () => {
-            if (confirm("Revoke access to this market?")) {
+            if (await utils.confirm("Revoke access to this market?")) {
               await supabase.from('user_market_roles').delete().eq('id', b.dataset.id);
               loadAdminData();
             }
@@ -925,16 +1014,18 @@
             const id = b.dataset.id;
             const isCurrentAdmin = b.dataset.admin === 'true';
             const promptMsg = isCurrentAdmin ? "Remove Super Admin rights?" : "Grant Super Admin rights to this user?";
-            if (confirm(promptMsg)) {
+            if (await utils.confirm(promptMsg)) {
               await supabase.from('users').update({ is_super_admin: !isCurrentAdmin }).eq('id', id);
               loadAdminData();
             }
           });
 
           document.querySelectorAll('.btn-del-user').forEach(b => b.onclick = async () => {
-            if (confirm("Permanently delete this user profile from the database? (Note: This won't delete the auth account but will remove all access and profile data)")) {
-              await supabase.from('users').delete().eq('id', b.dataset.id);
-              loadAdminData();
+            if (await utils.confirm("Permanently delete this user profile from the database? (Note: This won't delete the auth account but will remove all access and profile data)")) {
+              try {
+                await api.deleteUser(b.dataset.id);
+                loadAdminData();
+              } catch (e) { alert("Failed to delete user: " + e.message); }
             }
           });
         }

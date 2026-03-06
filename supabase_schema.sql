@@ -145,8 +145,8 @@ $$ LANGUAGE plpgsql SECURITY DEFINER;
 DROP POLICY IF EXISTS "Public can view users" ON public.users;
 CREATE POLICY "Public can view users" ON public.users FOR SELECT USING (true);
 
-DROP POLICY IF EXISTS "Admins can update users" ON public.users;
-CREATE POLICY "Admins can update users" ON public.users FOR UPDATE USING (public.is_super_admin(auth.uid()));
+DROP POLICY IF EXISTS "Admins can delete users" ON public.users;
+CREATE POLICY "Admins can delete users" ON public.users FOR DELETE USING (public.is_super_admin(auth.uid()));
 
 -- Markets
 DROP POLICY IF EXISTS "Users can view markets they have role in" ON public.markets;
