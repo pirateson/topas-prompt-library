@@ -308,34 +308,8 @@
 
         async function notifyLarkNewUser(user) {
           try {
-            const card = {
-              "msg_type": "interactive",
-              "card": {
-                "header": {
-                  "title": { "tag": "plain_text", "content": "🚀 Có tài khoản mới được tạo" },
-                  "template": "blue"
-                },
-                "elements": [
-                  {
-                    "tag": "div",
-                    "text": { "tag": "lark_md", "content": `**Email:** ${user.email}\n**Tên:** ${user.name || 'N/A'}` }
-                  },
-                  {
-                    "tag": "action",
-                    "actions": [{
-                      "tag": "button",
-                      "text": { "tag": "plain_text", "content": "Thiết lập quyền cho user" },
-                      "type": "primary",
-                      "url": window.location.href // Redirect to current site
-                    }]
-                  }
-                ]
-              }
-            };
-            await fetch(LARK_WEBHOOK_URL, {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(card)
+            await supabase.functions.invoke('lark-notify', {
+              body: { user }
             });
           } catch (e) { console.error("Lark notify failed:", e); }
         }
@@ -669,10 +643,14 @@
                   const n = state.newTopicName.trim();
                   if (!n) return;
                   await utils.withLoading(e.target, async () => {
-                    await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: n });
-                    state.isCreatingTopic = false;
-                    state.newTopicName = '';
-                    await loadMarketData();
+                    const res = await supabase.from('topics').insert({ market_id: state.selectedMarketId, name: state.newTopicName }).select().single();
+                    if (res.error) alert(res.error.message);
+                    else {
+                      state.newTopicName = '';
+                      state.isCreatingTopic = false;
+                      state.selectedTopicId = res.data.id;
+                      await loadMarketData();
+                    }
                   });
                 });
               }
@@ -1024,12 +1002,28 @@
            </tr>`).join('');
 
           // 4. Market List Side
-          document.getElementById('market-list-admin').innerHTML = mrkts.map(m => `<div class="p-3 bg-slate-50 rounded-xl text-sm font-bold flex justify-between items-center">${m.name}</div>`).join('');
+          document.getElementById('market-list-admin').innerHTML = mrkts.map(m => `
+            <div class="p-3 bg-slate-50 rounded-xl text-sm font-bold flex justify-between items-center group">
+              <span>${m.name}</span>
+              <button class="btn-del-market p-1 text-slate-300 hover:text-red-500 transition-colors opacity-0 group-hover:opacity-100" data-id="${m.id}" title="Delete Market">
+                <i data-lucide="trash-2" class="h-4 w-4"></i>
+              </button>
+            </div>`).join('');
 
           // Re-init Icons
           if (window.lucide) window.lucide.createIcons();
 
           // Attach Listeners
+          document.querySelectorAll('.btn-del-market').forEach(b => b.onclick = async () => {
+            if (await utils.confirm("Permanently delete this market? This will delete all topics and prompts inside.")) {
+              const { error } = await supabase.from('markets').delete().eq('id', b.dataset.id);
+              if (error) alert(error.message);
+              else {
+                if (state.selectedMarketId === b.dataset.id) state.selectedMarketId = null;
+                loadAdminData();
+              }
+            }
+          });
           document.querySelectorAll('.btn-del-role').forEach(b => b.onclick = async () => {
             if (await utils.confirm("Revoke access to this market?")) {
               await supabase.from('user_market_roles').delete().eq('id', b.dataset.id);
