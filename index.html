@@ -174,7 +174,8 @@
           isCreatingTopic: false,
           newTopicName: '',
           currentRole: null,
-          sortBy: 'newest'
+          sortBy: 'newest',
+          currentTopicListId: null
         };
 
         // --- API ---
@@ -493,30 +494,34 @@
 
           const tl = document.getElementById('topic-list');
           if (tl) {
-            tl.innerHTML = '';
-            state.topics.forEach(t => {
-              const isSel = state.selectedTopicId === t.id;
-              const can = state.currentRole === 'edit' || state.isSuperAdmin;
-              const b = utils.createElement(`
-                <div class="group relative">
-                  <button class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${isSel ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
-                    <i data-lucide="folder" class="h-4 w-4"></i> ${t.name}
-                  </button>
-                  ${can ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
-                </div>
-              `);
-              b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
-              const db = b.querySelector('.btn-del-topic');
-              if (db) db.onclick = async (e) => {
-                e.stopPropagation();
-                if (confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
-                  await supabase.from('topics').delete().eq('id', t.id);
-                  if (state.selectedTopicId === t.id) state.selectedTopicId = null;
-                  await loadMarketData();
-                }
-              };
-              tl.appendChild(b);
-            });
+            const topicListId = state.topics.map(t => t.id).join('-') + state.selectedTopicId;
+            if (state.currentTopicListId !== topicListId) {
+              tl.innerHTML = '';
+              state.topics.forEach(t => {
+                const isSel = state.selectedTopicId === t.id;
+                const can = state.currentRole === 'edit' || state.isSuperAdmin;
+                const b = utils.createElement(`
+                  <div class="group relative">
+                    <button class="w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${isSel ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}">
+                      <i data-lucide="folder" class="h-4 w-4"></i> ${t.name}
+                    </button>
+                    ${can ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
+                  </div>
+                `);
+                b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
+                const db = b.querySelector('.btn-del-topic');
+                if (db) db.onclick = async (e) => {
+                  e.stopPropagation();
+                  if (confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
+                    await supabase.from('topics').delete().eq('id', t.id);
+                    if (state.selectedTopicId === t.id) state.selectedTopicId = null;
+                    await loadMarketData();
+                  }
+                };
+                tl.appendChild(b);
+              });
+              state.currentTopicListId = topicListId;
+            }
           }
 
           const sf = document.getElementById('sidebar-footer');
@@ -563,6 +568,28 @@
           const m = document.getElementById('main-content');
           if (!m) return;
           const isO = !state.selectedTopicId;
+
+          // Optimization: Check what's currently rendered to avoid innerHTML flickering
+          const currentViewId = isO ? 'overview' : (state.isEditingNew ? 'editor-' + (state.selectedPromptId || 'new') : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery));
+
+          if (m.dataset.currentViewId === currentViewId && !state.isEditingNew && !isO && !state.selectedPromptId) {
+            // For list view, we still want to update the grid if prompts changed, but maybe not the whole header
+            const grid = document.getElementById('prompt-grid');
+            if (grid) {
+              const gridId = state.prompts.map(p => p.id).join('-');
+              if (grid.dataset.gridId === gridId) return;
+              grid.innerHTML = '';
+              grid.dataset.gridId = gridId;
+              renderPromptCards(grid);
+              if (window.lucide) window.lucide.createIcons();
+              return;
+            }
+          }
+
+          if (m.dataset.currentViewId === currentViewId && (isO || state.selectedPromptId || state.isEditingNew)) return;
+
+          m.dataset.currentViewId = currentViewId;
+
           if (isO) {
             m.innerHTML = `
               <div class="mb-10 fade-in"><h2 class="text-3xl font-black tracking-tight text-brand-dark">Market Overview</h2><p class="text-slate-400 font-medium">Select a category to explore prompts</p></div>
@@ -643,46 +670,52 @@
             // Render Prompt Cards
             const grid = document.getElementById('prompt-grid');
             if (grid) {
-              state.prompts.forEach(p => {
-                const card = utils.createElement(`
-                  <div class="card-premium cursor-pointer group relative flex flex-col h-full">
-                    <div class="flex-1">
-                      <div class="flex justify-between items-start mb-4">
-                        <div class="w-10 h-10 rounded-lg bg-orange-50 text-brand-orange flex items-center justify-center mb-2"><i data-lucide="file-text" class="h-5 w-5"></i></div>
-                        ${can ? `<button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>` : ''}
-                      </div>
-                      <h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors line-clamp-1">${p.title}</h3>
-                      <p class="text-xs text-slate-400 font-medium line-clamp-3 mb-4 leading-relaxed">${p.content || ''}</p>
-                    </div>
-                    <div class="pt-4 mt-auto border-t border-slate-50 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-300">
-                      <span>Ref: #${p.id.split('-')[0]}</span>
-                      <span class="flex items-center gap-1"><i data-lucide="clock" class="h-3 w-3"></i> Updated</span>
-                    </div>
-                  </div>
-                `);
-
-                card.onclick = (e) => {
-                  if (e.target.closest('.btn-del-p')) return;
-                  state.selectedPromptId = p.id;
-                  state.isEditingNew = false;
-                  render();
-                };
-
-                const delBtn = card.querySelector('.btn-del-p');
-                if (delBtn) {
-                  delBtn.onclick = async (e) => {
-                    e.stopPropagation();
-                    if (confirm("Xóa prompt này?")) {
-                      await api.deletePrompt(p.id);
-                      if (state.selectedPromptId === p.id) state.selectedPromptId = null;
-                      await loadPromptsData();
-                    }
-                  };
-                }
-                grid.appendChild(card);
-              });
+              grid.dataset.gridId = state.prompts.map(p => p.id).join('-');
+              renderPromptCards(grid);
             }
           }
+        }
+
+        function renderPromptCards(grid) {
+          const can = state.currentRole === 'edit' || state.isSuperAdmin;
+          state.prompts.forEach(p => {
+            const card = utils.createElement(`
+              <div class="card-premium cursor-pointer group relative flex flex-col h-full">
+                <div class="flex-1">
+                  <div class="flex justify-between items-start mb-4">
+                    <div class="w-10 h-10 rounded-lg bg-orange-50 text-brand-orange flex items-center justify-center mb-2"><i data-lucide="file-text" class="h-5 w-5"></i></div>
+                    ${can ? `<button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>` : ''}
+                  </div>
+                  <h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors line-clamp-1">${p.title}</h3>
+                  <p class="text-xs text-slate-400 font-medium line-clamp-3 mb-4 leading-relaxed">${p.content || ''}</p>
+                </div>
+                <div class="pt-4 mt-auto border-t border-slate-50 flex items-center justify-between text-[10px] font-black uppercase tracking-widest text-slate-300">
+                  <span>Ref: #${p.id.split('-')[0]}</span>
+                  <span class="flex items-center gap-1"><i data-lucide="clock" class="h-3 w-3"></i> Updated</span>
+                </div>
+              </div>
+            `);
+
+            card.onclick = (e) => {
+              if (e.target.closest('.btn-del-p')) return;
+              state.selectedPromptId = p.id;
+              state.isEditingNew = false;
+              render();
+            };
+
+            const delBtn = card.querySelector('.btn-del-p');
+            if (delBtn) {
+              delBtn.onclick = async (e) => {
+                e.stopPropagation();
+                if (confirm("Xóa prompt này?")) {
+                  await api.deletePrompt(p.id);
+                  if (state.selectedPromptId === p.id) state.selectedPromptId = null;
+                  await loadPromptsData();
+                }
+              };
+            }
+            grid.appendChild(card);
+          });
         }
 
         function updatePromptsSidebar() { }
