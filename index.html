@@ -911,7 +911,7 @@
                         <th class="px-6 py-4"></th>
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-50"></tbody>
+                    <tbody id="topic-table-body" class="divide-y divide-slate-50"></tbody>
                   </table>
                 </div>
               `}
@@ -922,19 +922,19 @@
             document.getElementById('sel-topic-sort')?.addEventListener('change', (e) => { state.topicSortBy = e.target.value; render(); });
 
             if (state.viewMode === 'list') {
-              const tbody = m.querySelector('tbody');
+              const tbody = document.getElementById('topic-table-body');
               const can = state.currentRole === 'edit' || state.isSuperAdmin;
-              sortedTopics.forEach(t => {
+              sortedTopics.forEach(topic => {
                 const tr = document.createElement('tr');
                 tr.className = 'group hover:bg-slate-50/50 transition-colors cursor-pointer';
                 tr.innerHTML = `
                   <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell" data-field="name">
                     <div class="flex items-center gap-3">
                       <div class="w-8 h-8 rounded-lg bg-orange-50 text-brand-orange flex items-center justify-center flex-shrink-0"><i data-lucide="folder" class="h-4 w-4"></i></div>
-                      ${t.name}
+                      ${topic.name}
                     </div>
                   </td>
-                  <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${new Date(t.created_at).toLocaleDateString()}</td>
+                  <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${new Date(topic.created_at).toLocaleDateString()}</td>
                   <td class="px-6 py-5 text-right">
                     <div class="flex justify-end items-center gap-4">
                       <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -947,23 +947,23 @@
                 `;
                 tr.onclick = (e) => {
                   if (e.target.closest('button') || e.target.closest('.inline-edit-el')) return;
-                  setTopic(t.id);
+                  setTopic(topic.id);
                 };
                 if (can) {
                   tr.querySelector('.btn-edit-topic').onclick = (e) => {
                     e.stopPropagation();
-                    startInlineEdit(tr.querySelector('.editable-cell'), t, 'name', 'topics');
+                    startInlineEdit(tr.querySelector('.editable-cell'), topic, 'name', 'topics');
                   };
                   tr.querySelector('.btn-del-topic').onclick = async (e) => {
                     e.stopPropagation();
                     if (await utils.confirm(t('confirmDeleteTopic'))) {
-                      await supabase.from('topics').delete().eq('id', t.id);
+                      await supabase.from('topics').delete().eq('id', topic.id);
                       await loadMarketData();
                     }
                   };
                   tr.querySelector('.editable-cell').onclick = (e) => {
                     e.stopPropagation();
-                    startInlineEdit(tr.querySelector('.editable-cell'), t, 'name', 'topics');
+                    startInlineEdit(tr.querySelector('.editable-cell'), topic, 'name', 'topics');
                   };
                 }
                 tbody.appendChild(tr);
