@@ -671,17 +671,7 @@
           const currentViewId = isO ? 'overview-' + state.selectedMarketId : (state.isEditingNew ? 'editor-' + (state.selectedPromptId || 'new') : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery + '-' + state.viewMode));
 
           if (m.dataset.currentViewId === currentViewId && !state.isEditingNew && !isO && !state.selectedPromptId) {
-            // For list view, we still want to update the grid if prompts changed, but maybe not the whole header
-            const grid = document.getElementById('prompt-grid');
-            if (grid) {
-              const gridId = state.prompts.map(p => p.id).join('-');
-              if (grid.dataset.gridId === gridId) return;
-              grid.innerHTML = '';
-              grid.dataset.gridId = gridId;
-              renderPromptCards(grid);
-              if (window.lucide) window.lucide.createIcons();
-              return;
-            }
+            return;
           }
 
           if (m.dataset.currentViewId === currentViewId && (isO || state.selectedPromptId || state.isEditingNew)) return;
@@ -888,14 +878,13 @@
         function renderPromptListView(container) {
           const can = state.currentRole === 'edit' || state.isSuperAdmin;
           const table = utils.createElement(`
-            <table class="w-full text-left border-collapse">
+            <table class="w-full text-left border-collapse table-fixed">
               <thead>
                 <tr class="bg-slate-50/50 border-b border-slate-100">
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Tiêu đề</th>
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Nội dung</th>
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Người tạo</th>
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Ngày tạo</th>
-                  ${can ? '<th class="px-6 py-4"></th>' : ''}
+                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[50%]">Nội dung</th>
+                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[30%]">Tiêu đề</th>
+                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[12%]">Ngày tạo</th>
+                  ${can ? '<th class="px-6 py-4 w-[8%]"></th>' : ''}
                 </tr>
               </thead>
               <tbody class="divide-y divide-slate-50"></tbody>
@@ -904,22 +893,23 @@
           const tbody = table.querySelector('tbody');
 
           state.prompts.forEach(p => {
-            const creator = state.users.find(u => u.id === p.created_by)?.name || 'Unknown';
             const date = new Date(p.created_at).toLocaleDateString();
             const tr = document.createElement('tr');
             tr.className = 'group hover:bg-slate-50/50 transition-colors cursor-pointer';
             tr.dataset.id = p.id;
             tr.innerHTML = `
-                <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell" data-field="title">${p.title}</td>
-                <td class="px-6 py-5 text-sm text-slate-400 max-w-xs truncate editable-cell" data-field="content">${p.content || ''}</td>
-                <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${creator}</td>
+                <td class="px-6 py-5 text-sm text-slate-400 truncate editable-cell relative" data-field="content">
+                  <span class="inline-block max-w-[90%] truncate">${p.content || ''}</span>
+                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity"></i>' : ''}
+                </td>
+                <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell relative" data-field="title">
+                  <span class="inline-block max-w-[90%] truncate">${p.title}</span>
+                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity"></i>' : ''}
+                </td>
                 <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${date}</td>
                 ${can ? `
                   <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
-                    <div class="flex justify-end gap-2">
-                      <button class="btn-edit-p p-2 text-slate-300 hover:text-brand-orange transition-colors rounded-lg" title="Edit Inline"><i data-lucide="edit-3" class="h-4 w-4"></i></button>
-                      <button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
-                    </div>
+                    <button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
                   </td>
                 ` : ''}
             `;
@@ -939,15 +929,7 @@
                 };
               });
 
-              tr.querySelector('.btn-edit-topic')?.addEventListener('click', (e) => {
-                // This is actually for prompts, but let's fix the logic
-              });
-
-              tr.querySelector('.btn-edit-p')?.addEventListener('click', (e) => {
-                e.stopPropagation();
-                // Default to title if content not clicked
-                startInlineEdit(tr.querySelector('[data-field="title"]'), p, 'title', 'prompts');
-              });
+              tr.querySelector('.btn-edit-p')?.remove();
 
               const delBtn = tr.querySelector('.btn-del-p');
               if (delBtn) delBtn.onclick = async (e) => {
