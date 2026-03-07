@@ -189,7 +189,6 @@
           selectedTopicId: null,
           selectedPromptId: null,
           view: 'loading',
-          isEditingNew: false,
           isCreatingTopic: false,
           newTopicName: '',
           currentRole: null,
@@ -199,6 +198,7 @@
           users: [],
           topicSortBy: 'newest',
           expandedMarketIds: [],
+          isAddingPromptInline: false,
           language: localStorage.getItem('topas-lang') || 'vi'
         };
 
@@ -499,9 +499,8 @@
           state.currentRole = state.isSuperAdmin ? 'superadmin' : (r ? r.role : 'view');
 
           state.topics = await api.getTopics(state.selectedMarketId);
-          state.selectedPromptId = null;
           state.selectedTopicId = null;
-          state.isEditingNew = false;
+          state.isAddingPromptInline = false;
           state.isCreatingTopic = false;
           state.newTopicName = '';
           await loadPromptsData();
@@ -769,7 +768,7 @@
           if (bal) {
             bal.innerHTML = `<i data-lucide="grid" class="h-4 w-4"></i> ${t('allCategories')}`;
             bal.className = `w-full text-left px-4 py-3 rounded-xl text-sm font-bold flex items-center gap-3 transition-all ${!state.selectedTopicId ? 'bg-orange-50 text-brand-orange' : 'text-slate-600 hover:bg-slate-50'}`;
-            bal.onclick = () => { state.selectedTopicId = null; state.selectedPromptId = null; state.isEditingNew = false; render(); };
+            bal.onclick = () => { state.selectedTopicId = null; state.selectedPromptId = null; state.isAddingPromptInline = false; render(); };
           }
 
           const tl = document.getElementById('topic-list');
@@ -788,7 +787,7 @@
                     ${can ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
                   </div>
                 `);
-                b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; state.viewMode = 'list'; await loadPromptsData(); };
+                b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isAddingPromptInline = false; state.viewMode = 'list'; await loadPromptsData(); };
                 const db = b.querySelector('.btn-del-topic');
                 if (db) db.onclick = async (e) => {
                   e.stopPropagation();
@@ -854,13 +853,13 @@
           const isO = !state.selectedTopicId;
 
           // Optimization: Check what's currently rendered to avoid innerHTML flickering
-          const currentViewId = isO ? 'overview-' + state.selectedMarketId + '-' + state.viewMode + '-' + state.topicSortBy : (state.isEditingNew ? 'editor-' + (state.selectedPromptId || 'new') : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery + '-' + state.viewMode));
+          const currentViewId = isO ? 'overview-' + state.selectedMarketId + '-' + state.viewMode + '-' + state.topicSortBy : (state.selectedPromptId ? 'detail-' + state.selectedPromptId : 'list-' + state.selectedTopicId + '-' + state.sortBy + '-' + state.searchQuery + '-' + state.viewMode + '-' + state.isAddingPromptInline);
 
-          if (m.dataset.currentViewId === currentViewId && !state.isEditingNew && !isO && !state.selectedPromptId) {
+          if (m.dataset.currentViewId === currentViewId && !isO && !state.selectedPromptId) {
             return;
           }
 
-          if (m.dataset.currentViewId === currentViewId && (isO || state.selectedPromptId || state.isEditingNew)) return;
+          if (m.dataset.currentViewId === currentViewId && (isO || state.selectedPromptId)) return;
 
           m.dataset.currentViewId = currentViewId;
 
@@ -970,12 +969,9 @@
               });
               if (window.lucide) window.lucide.createIcons();
             }
-          } else if (state.isEditingNew) {
-            m.innerHTML = renderPromptEditorHTML();
-            attachEditorEvents();
           } else if (state.selectedPromptId) {
             const p = state.prompts.find(pr => pr.id === state.selectedPromptId);
-            if (p) { m.innerHTML = renderPromptDetailHTML(p); attachDetailEvents(p); }
+            if (p) { /* Detail view removed */ state.selectedPromptId = null; render(); }
           } else {
             const at = state.topics.find(t => t.id === state.selectedTopicId);
             const can = state.currentRole === 'edit' || state.isSuperAdmin;
@@ -1047,7 +1043,7 @@
             }
 
             // Attach Create Event
-            document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isEditingNew = true; state.selectedPromptId = null; render(); });
+            document.getElementById('btn-create-p')?.addEventListener('click', () => { state.isAddingPromptInline = true; render(); });
 
             // Attach View Toggle Events
             document.getElementById('btn-view-grid')?.addEventListener('click', () => { state.viewMode = 'grid'; render(); });
@@ -1071,20 +1067,71 @@
 
         function renderPromptListView(container) {
           const can = state.currentRole === 'edit' || state.isSuperAdmin;
-          const table = utils.createElement(`
-            <table class="w-full text-left border-collapse table-fixed">
-              <thead>
-                <tr class="bg-slate-50/50 border-b border-slate-100">
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[30%]">${t('title')}</th>
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[50%]">${t('content')}</th>
-                  <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[12%]">${t('dateCreated')}</th>
-                  ${can ? '<th class="px-6 py-4 w-[8%]"></th>' : ''}
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-slate-50"></tbody>
-            </table>
-          `);
-          const tbody = table.querySelector('tbody');
+          container.className = 'bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm flex flex-col max-h-[600px]';
+
+          container.innerHTML = `
+            <div class="overflow-x-auto">
+              <table class="w-full text-left border-collapse table-fixed min-w-[800px]">
+                <thead>
+                  <tr class="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-20">
+                    <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[30%] bg-slate-50/50">${t('title')}</th>
+                    <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[50%] bg-slate-50/50">${t('content')}</th>
+                    <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 w-[12%] bg-slate-50/50">${t('dateCreated')}</th>
+                    ${can ? '<th class="px-6 py-4 w-[8%] bg-slate-50/50"></th>' : ''}
+                  </tr>
+                </thead>
+                <tbody class="divide-y divide-slate-50" id="prompt-table-body"></tbody>
+              </table>
+            </div>
+          `;
+
+          const tbody = container.querySelector('#prompt-table-body');
+
+          // Inline Add Row
+          if (state.isAddingPromptInline && can) {
+            const tr = document.createElement('tr');
+            tr.className = 'bg-orange-50/30';
+            tr.innerHTML = `
+              <td class="px-6 py-4">
+                <input type="text" id="in-inline-title" class="w-full bg-white border border-brand-orange/20 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-orange/10" placeholder="${t('title')}...">
+              </td>
+              <td class="px-6 py-4">
+                <textarea id="in-inline-content" rows="1" class="w-full bg-white border border-brand-orange/20 rounded-xl px-3 py-2 text-sm font-medium outline-none focus:ring-2 focus:ring-brand-orange/10 resize-none" placeholder="${t('content')}..."></textarea>
+              </td>
+              <td class="px-6 py-4 text-[10px] font-black uppercase tracking-widest text-slate-300">${t('createNew')}</td>
+              <td class="px-6 py-4 text-right">
+                <div class="flex justify-end gap-2">
+                  <button id="btn-inline-save-new" class="p-2 bg-brand-orange text-white rounded-lg shadow-lg shadow-orange-500/20 hover:bg-orange-600 transition-all"><i data-lucide="check" class="h-4 w-4"></i></button>
+                  <button id="btn-inline-cancel-new" class="p-2 bg-white border border-slate-200 text-slate-400 rounded-lg hover:bg-slate-50 transition-all"><i data-lucide="x" class="h-4 w-4"></i></button>
+                </div>
+              </td>
+            `;
+            tbody.appendChild(tr);
+
+            const titleInp = tr.querySelector('#in-inline-title');
+            const contentInp = tr.querySelector('#in-inline-content');
+
+            titleInp.focus();
+
+            tr.querySelector('#btn-inline-cancel-new').onclick = () => { state.isAddingPromptInline = false; render(); };
+            tr.querySelector('#btn-inline-save-new').onclick = async () => {
+              const title = titleInp.value.trim();
+              const content = contentInp.value.trim();
+              if (!title) return alert("Title is required");
+
+              await utils.withLoading(tr.querySelector('#btn-inline-save-new'), async () => {
+                await api.savePrompt({ topic_id: state.selectedTopicId, title, content });
+                state.isAddingPromptInline = false;
+                await loadPromptsData();
+              });
+            };
+
+            // Auto-expand textarea
+            contentInp.addEventListener('input', () => {
+              contentInp.style.height = 'auto';
+              contentInp.style.height = (contentInp.scrollHeight) + 'px';
+            });
+          }
 
           state.prompts.forEach(p => {
             const date = new Date(p.created_at).toLocaleDateString();
@@ -1094,26 +1141,19 @@
             tr.innerHTML = `
                 <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell relative" data-field="title">
                   <span class="inline-block max-w-[90%] truncate">${p.title}</span>
-                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity"></i>' : ''}
+                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-brand-orange"></i>' : ''}
                 </td>
                 <td class="px-6 py-5 text-sm text-slate-400 truncate editable-cell relative" data-field="content">
                   <span class="inline-block max-w-[90%] truncate">${p.content || ''}</span>
-                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-20 group-hover:opacity-100 transition-opacity"></i>' : ''}
+                  ${can ? '<i data-lucide="edit-3" class="h-3 w-3 absolute right-2 top-1/2 -translate-y-1/2 opacity-0 group-hover:opacity-100 transition-opacity text-brand-orange"></i>' : ''}
                 </td>
-                <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${date}</td>
+                <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300 w-[12%]">${date}</td>
                 ${can ? `
                   <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
                     <button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
                   </td>
                 ` : ''}
             `;
-
-            tr.onclick = (e) => {
-              if (e.target.closest('button') || e.target.closest('.inline-edit-el')) return;
-              state.selectedPromptId = p.id;
-              state.isEditingNew = false;
-              render();
-            };
 
             if (can) {
               tr.querySelectorAll('.editable-cell').forEach(cell => {
@@ -1122,8 +1162,6 @@
                   startInlineEdit(cell, p, cell.dataset.field, 'prompts');
                 };
               });
-
-              tr.querySelector('.btn-edit-p')?.remove();
 
               const delBtn = tr.querySelector('.btn-del-p');
               if (delBtn) delBtn.onclick = async (e) => {
@@ -1137,7 +1175,7 @@
 
             tbody.appendChild(tr);
           });
-          container.appendChild(table);
+
           if (window.lucide) window.lucide.createIcons();
         }
 
@@ -1226,9 +1264,7 @@
 
             card.onclick = (e) => {
               if (e.target.closest('.btn-del-p')) return;
-              state.selectedPromptId = p.id;
-              state.isEditingNew = false;
-              render();
+              // Detail view navigation removed
             };
 
             const delBtn = card.querySelector('.btn-del-p');
@@ -1248,85 +1284,7 @@
 
         function updatePromptsSidebar() { }
 
-        function renderPromptDetailHTML(p) {
-          const canEdit = state.currentRole === 'edit' || state.isSuperAdmin;
-          return `
-          <div class="max-w-4xl w-full mx-auto fade-in">
-            <div class="flex items-center gap-4 mb-10">
-              <button id="btn-back-to-list" class="p-2 hover:bg-slate-50 rounded-xl transition-all"><i data-lucide="arrow-left" class="h-6 w-6 text-slate-400"></i></button>
-              <div>
-                <div class="bg-orange-50 text-brand-orange text-[10px] font-black uppercase tracking-widest px-2 py-1 rounded-lg inline-block mb-3">${state.topics.find(t => t.id === p.topic_id)?.name}</div>
-                <h1 class="text-4xl font-black tracking-tight text-brand-dark mb-4">${p.title}</h1>
-              </div>
-            </div>
-            <div class="flex justify-between items-start mb-6">
-              <div></div>
-              <div class="flex gap-2">
-                <button id="btn-copy-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 shadow-sm hover:bg-slate-50"><i data-lucide="copy" class="h-4 w-4"></i> ${t('copy')}</button>
-                ${canEdit ? `<button id="btn-edit-main" class="h-10 px-6 bg-white border border-slate-200 rounded-xl text-sm font-bold flex items-center gap-2 hover:bg-slate-50"><i data-lucide="edit-3" class="h-4 w-4"></i> ${t('edit')}</button>` : ''}
-              </div>
-            </div>
-            <div class="bg-white rounded-[32px] p-8 md:p-12 border border-slate-100 shadow-xl shadow-slate-900/5 font-mono text-sm leading-relaxed whitespace-pre-wrap text-slate-700 min-h-[300px]">${p.content || ''}</div>
-            <div class="mt-16 pt-10 border-t border-slate-100"><h3 class="text-xs font-black uppercase tracking-widest text-slate-300 mb-8 flex items-center gap-2"><i data-lucide="history" class="h-4 w-4"></i> ${t('revisionHistory')}</h3><div id="vh-list" class="grid grid-cols-1 md:grid-cols-2 gap-4 pb-20"></div></div>
-          </div>
-        `;
-        }
-
-        function attachDetailEvents(p) {
-          document.getElementById('btn-back-to-list').onclick = () => {
-            state.selectedPromptId = null;
-            render();
-          };
-          document.getElementById('btn-copy-main').onclick = () => {
-            navigator.clipboard.writeText(p.content);
-            const b = document.getElementById('btn-copy-main'); b.innerHTML = `<i data-lucide="check" class="h-4 w-4 text-green-500"></i> ${t('copied')}`;
-            setTimeout(() => { b.innerHTML = `<i data-lucide="copy" class="h-4 w-4"></i> ${t('copy')}`; if (window.lucide) window.lucide.createIcons(); }, 1500);
-          };
-          document.getElementById('btn-edit-main')?.addEventListener('click', () => { state.isEditingNew = true; render(); });
-          api.getPromptVersions(p.id).then(vs => {
-            const l = document.getElementById('vh-list');
-            l.innerHTML = vs.map(v => `<div class="bg-slate-50 border border-slate-100 rounded-2xl p-5 shadow-sm"><div class="flex justify-between items-center mb-3"><span class="font-black text-[10px] text-brand-orange uppercase">Revision v${v.version}</span><span class="text-[10px] text-slate-300 font-bold">${new Date(v.created_at).toLocaleString()}</span></div><p class="text-xs text-slate-500 line-clamp-3 font-mono">${v.content || ''}</p></div>`).join('');
-          });
-        }
-
-        function renderPromptEditorHTML() {
-          const p = state.prompts.find(pr => pr.id === state.selectedPromptId) || { topic_id: state.selectedTopicId, title: '', content: '' };
-          return `
-           <div class="max-w-4xl mx-auto w-full fade-in">
-             <div class="flex items-center gap-4 mb-10">
-               <button id="btn-cancel-p" class="p-2 hover:bg-slate-50 rounded-xl transition-all"><i data-lucide="arrow-left" class="h-6 w-6 text-slate-400"></i></button>
-               <h2 class="text-3xl font-black">${state.selectedPromptId ? t('updatePrompt') : t('createNew')}</h2>
-             </div>
-             <form id="form-p" class="space-y-8 pb-20">
-                <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">${t('categoryName')}</label><select id="in-topic" required class="w-full bg-white border border-slate-100 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-50">${state.topics.map(t => `<option value="${t.id}" ${p.topic_id === t.id ? 'selected' : ''}>${t.name}</option>`).join('')}</select></div>
-                  <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">${t('title')}</label><input type="text" id="in-title" required value="${p.title}" class="w-full bg-white border border-slate-100 rounded-xl p-4 text-sm font-bold outline-none focus:ring-2 focus:ring-orange-50" placeholder="${t('promptTitlePlaceholder')}"></div>
-                </div>
-                <div class="space-y-2"><label class="text-[10px] font-black uppercase tracking-widest text-slate-300">${t('content')}</label><textarea id="in-content" required class="w-full bg-white border border-slate-100 rounded-3xl p-6 text-sm font-mono leading-relaxed outline-none focus:ring-2 focus:ring-orange-50 min-h-[400px]" placeholder="${t('promptBodyPlaceholder')}">${p.content || ''}</textarea></div>
-                <div class="flex justify-end gap-3"><button type="submit" class="btn-orange px-10 py-4 rounded-2xl font-bold shadow-lg shadow-orange-500/20">${t('savePrompt')}</button></div>
-             </form>
-           </div>
-         `;
-        }
-
-        function attachEditorEvents() {
-          document.getElementById('btn-cancel-p').onclick = () => { state.isEditingNew = false; render(); };
-          document.getElementById('form-p').onsubmit = async (e) => {
-            e.preventDefault();
-            const d = {
-              id: state.selectedPromptId,
-              topic_id: document.getElementById('in-topic').value,
-              title: document.getElementById('in-title').value,
-              content: document.getElementById('in-content').value
-            };
-            try {
-              const res = await api.savePrompt(d);
-              state.isEditingNew = false;
-              state.selectedPromptId = res.id;
-              await loadPromptsData();
-            } catch (e) { alert(e.message); }
-          };
-        }
+        // Editor views removed. All editing is now inline.
 
         function renderAdminPanel() {
           const el = utils.createElement(`
