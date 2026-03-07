@@ -901,17 +901,19 @@
                   ${sortedTopics.map(t => `<div class="card-premium cursor-pointer group" onclick="setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
                 </div>
               ` : `
-                <div class="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm fade-in mb-20" id="market-list-container">
-                  <table class="w-full text-left border-collapse">
-                    <thead>
-                      <tr class="bg-slate-50/50 border-b border-slate-100">
-                        <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">${t('categoryName')}</th>
-                        <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">${t('dateCreated')}</th>
-                        <th class="px-6 py-4"></th>
-                      </tr>
-                    </thead>
-                    <tbody id="topic-table-body" class="divide-y divide-slate-50"></tbody>
-                  </table>
+                <div class="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm fade-in mb-20 flex flex-col max-h-[600px]" id="market-list-container">
+                  <div class="overflow-auto no-scrollbar">
+                    <table class="w-full text-left border-collapse">
+                      <thead>
+                        <tr class="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-10">
+                          <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 bg-slate-50/50">${t('categoryName')}</th>
+                          <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300 bg-slate-50/50">${t('dateCreated')}</th>
+                          <th class="px-6 py-4 bg-slate-50/50"></th>
+                        </tr>
+                      </thead>
+                      <tbody id="topic-table-body" class="divide-y divide-slate-50"></tbody>
+                    </table>
+                  </div>
                 </div>
               `}
             `;
@@ -1070,7 +1072,7 @@
           container.className = 'bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm flex flex-col max-h-[600px]';
 
           container.innerHTML = `
-            <div class="overflow-x-auto">
+            <div class="overflow-auto no-scrollbar">
               <table class="w-full text-left border-collapse table-fixed min-w-[800px]">
                 <thead>
                   <tr class="bg-slate-50/50 border-b border-slate-100 sticky top-0 z-20">
