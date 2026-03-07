@@ -196,7 +196,8 @@
           sortBy: 'newest',
           currentTopicListId: null,
           viewMode: 'grid',
-          users: []
+          users: [],
+          topicSortBy: 'newest'
         };
 
         // --- API ---
@@ -688,44 +689,53 @@
           m.dataset.currentViewId = currentViewId;
 
           if (isO) {
+            let sortedTopics = [...state.topics];
+            if (state.topicSortBy === 'az') sortedTopics.sort((a, b) => a.name.localeCompare(b.name));
+            else if (state.topicSortBy === 'za') sortedTopics.sort((a, b) => b.name.localeCompare(a.name));
+            else if (state.topicSortBy === 'newest') sortedTopics.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+            else if (state.topicSortBy === 'oldest') sortedTopics.sort((a, b) => new Date(a.created_at) - new Date(b.created_at));
+
             m.innerHTML = `
               <div class="mb-10 fade-in">
                 <div class="flex items-center justify-between mb-2">
                   <h2 class="text-3xl font-black tracking-tight text-brand-dark">Market Overview</h2>
-                  <div class="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm overflow-hidden">
-                    <button id="btn-view-grid" class="p-2 rounded-lg transition-all ${state.viewMode === 'grid' ? 'bg-orange-50 text-brand-orange shadow-inner' : 'text-slate-400 hover:text-slate-600'}" title="Grid View">
-                      <i data-lucide="layout-grid" class="h-4 w-4"></i>
-                    </button>
-                    <button id="btn-view-list" class="p-2 rounded-lg transition-all ${state.viewMode === 'list' ? 'bg-orange-50 text-brand-orange shadow-inner' : 'text-slate-400 hover:text-slate-600'}" title="List View">
-                      <i data-lucide="list" class="h-4 w-4"></i>
-                    </button>
+                  <div class="flex items-center gap-3">
+                    <div class="relative">
+                      <select id="sel-topic-sort" class="appearance-none bg-white border border-slate-200 rounded-xl py-2.5 pl-4 pr-10 text-sm font-bold outline-none focus:ring-2 focus:ring-brand-orange/10 cursor-pointer">
+                        <option value="newest" ${state.topicSortBy === 'newest' ? 'selected' : ''}>Newest First</option>
+                        <option value="oldest" ${state.topicSortBy === 'oldest' ? 'selected' : ''}>Oldest First</option>
+                        <option value="az" ${state.topicSortBy === 'az' ? 'selected' : ''}>Name A-Z</option>
+                        <option value="za" ${state.topicSortBy === 'za' ? 'selected' : ''}>Name Z-A</option>
+                      </select>
+                      <i data-lucide="chevron-down" class="absolute right-3 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none"></i>
+                    </div>
+                    <div class="flex items-center bg-white border border-slate-200 rounded-xl p-1 shadow-sm overflow-hidden">
+                      <button id="btn-view-grid" class="p-2 rounded-lg transition-all ${state.viewMode === 'grid' ? 'bg-orange-50 text-brand-orange shadow-inner' : 'text-slate-400 hover:text-slate-600'}" title="Grid View">
+                        <i data-lucide="layout-grid" class="h-4 w-4"></i>
+                      </button>
+                      <button id="btn-view-list" class="p-2 rounded-lg transition-all ${state.viewMode === 'list' ? 'bg-orange-50 text-brand-orange shadow-inner' : 'text-slate-400 hover:text-slate-600'}" title="List View">
+                        <i data-lucide="list" class="h-4 w-4"></i>
+                      </button>
+                    </div>
                   </div>
                 </div>
                 <p class="text-slate-400 font-medium">Select a category to explore prompts</p>
               </div>
               ${state.viewMode === 'grid' ? `
                 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6 pb-20 fade-in">
-                  ${state.topics.map(t => `<div class="card-premium cursor-pointer group" onclick="setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
+                  ${sortedTopics.map(t => `<div class="card-premium cursor-pointer group" onclick="setTopic('${t.id}')"><div class="w-12 h-12 rounded-xl bg-orange-50 text-brand-orange flex items-center justify-center mb-6"><i data-lucide="folder" class="h-6 w-6"></i></div><h3 class="text-lg font-bold mb-2 group-hover:text-brand-orange transition-colors">${t.name}</h3><p class="text-xs text-slate-400 font-medium uppercase tracking-widest">Topic Area</p></div>`).join('')}
                 </div>
               ` : `
-                <div class="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm fade-in mb-20">
+                <div class="bg-white border border-slate-200 rounded-[32px] overflow-hidden shadow-sm fade-in mb-20" id="market-list-container">
                   <table class="w-full text-left border-collapse">
                     <thead>
                       <tr class="bg-slate-50/50 border-b border-slate-100">
                         <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Category Name</th>
-                        <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Type</th>
-                        <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Created At</th>
+                        <th class="px-6 py-4 text-[10px] font-black uppercase tracking-[0.2em] text-slate-300">Ngày tạo</th>
+                        <th class="px-6 py-4"></th>
                       </tr>
                     </thead>
-                    <tbody class="divide-y divide-slate-50">
-                      ${state.topics.map(t => `
-                        <tr class="group hover:bg-slate-50/50 transition-colors cursor-pointer" onclick="setTopic('${t.id}')">
-                          <td class="px-6 py-5 text-sm font-bold text-slate-700">${t.name}</td>
-                          <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">Topic Area</td>
-                          <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${new Date(t.created_at).toLocaleDateString()}</td>
-                        </tr>
-                      `).join('')}
-                    </tbody>
+                    <tbody class="divide-y divide-slate-50"></tbody>
                   </table>
                 </div>
               `}
@@ -733,6 +743,49 @@
             window.setTopic = async (tid) => { state.selectedTopicId = tid; await loadPromptsData(); };
             document.getElementById('btn-view-grid')?.addEventListener('click', () => { state.viewMode = 'grid'; render(); });
             document.getElementById('btn-view-list')?.addEventListener('click', () => { state.viewMode = 'list'; render(); });
+            document.getElementById('sel-topic-sort')?.addEventListener('change', (e) => { state.topicSortBy = e.target.value; render(); });
+
+            if (state.viewMode === 'list') {
+              const tbody = m.querySelector('tbody');
+              const can = state.currentRole === 'edit' || state.isSuperAdmin;
+              sortedTopics.forEach(t => {
+                const tr = document.createElement('tr');
+                tr.className = 'group hover:bg-slate-50/50 transition-colors cursor-pointer';
+                tr.innerHTML = `
+                  <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell" data-field="name">${t.name}</td>
+                  <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${new Date(t.created_at).toLocaleDateString()}</td>
+                  <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity">
+                    <div class="flex justify-end gap-2">
+                      <button class="btn-edit-topic p-2 text-slate-300 hover:text-brand-orange transition-colors rounded-lg" title="Edit Name"><i data-lucide="edit-3" class="h-4 w-4"></i></button>
+                      <button class="btn-del-topic p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" title="Delete Category"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                    </div>
+                  </td>
+                `;
+                tr.onclick = (e) => {
+                  if (e.target.closest('button') || e.target.closest('.inline-edit-el')) return;
+                  setTopic(t.id);
+                };
+                if (can) {
+                  tr.querySelector('.btn-edit-topic').onclick = (e) => {
+                    e.stopPropagation();
+                    startInlineEdit(tr.querySelector('.editable-cell'), t, 'name', 'topics');
+                  };
+                  tr.querySelector('.btn-del-topic').onclick = async (e) => {
+                    e.stopPropagation();
+                    if (await utils.confirm("Xóa chủ đề này sẽ xóa toàn bộ prompts bên trong. Tiếp tục?")) {
+                      await supabase.from('topics').delete().eq('id', t.id);
+                      await loadMarketData();
+                    }
+                  };
+                  tr.querySelector('.editable-cell').onclick = (e) => {
+                    e.stopPropagation();
+                    startInlineEdit(tr.querySelector('.editable-cell'), t, 'name', 'topics');
+                  };
+                }
+                tbody.appendChild(tr);
+              });
+              if (window.lucide) window.lucide.createIcons();
+            }
           } else if (state.isEditingNew) {
             m.innerHTML = renderPromptEditorHTML();
             attachEditorEvents();
@@ -862,14 +915,17 @@
                 <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${creator}</td>
                 <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${date}</td>
                 ${can ? `
-                  <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                    <button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                  <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity whitespace-nowrap">
+                    <div class="flex justify-end gap-2">
+                      <button class="btn-edit-p p-2 text-slate-300 hover:text-brand-orange transition-colors rounded-lg" title="Edit Inline"><i data-lucide="edit-3" class="h-4 w-4"></i></button>
+                      <button class="btn-del-p p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" data-id="${p.id}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                    </div>
                   </td>
                 ` : ''}
             `;
 
             tr.onclick = (e) => {
-              if (e.target.closest('.btn-del-p') || e.target.closest('.inline-edit-el')) return;
+              if (e.target.closest('button') || e.target.closest('.inline-edit-el')) return;
               state.selectedPromptId = p.id;
               state.isEditingNew = false;
               render();
@@ -879,8 +935,18 @@
               tr.querySelectorAll('.editable-cell').forEach(cell => {
                 cell.onclick = (e) => {
                   e.stopPropagation();
-                  startInlineEdit(cell, p, cell.dataset.field);
+                  startInlineEdit(cell, p, cell.dataset.field, 'prompts');
                 };
+              });
+
+              tr.querySelector('.btn-edit-topic')?.addEventListener('click', (e) => {
+                // This is actually for prompts, but let's fix the logic
+              });
+
+              tr.querySelector('.btn-edit-p')?.addEventListener('click', (e) => {
+                e.stopPropagation();
+                // Default to title if content not clicked
+                startInlineEdit(tr.querySelector('[data-field="title"]'), p, 'title', 'prompts');
               });
 
               const delBtn = tr.querySelector('.btn-del-p');
@@ -899,39 +965,66 @@
           if (window.lucide) window.lucide.createIcons();
         }
 
-        function startInlineEdit(cell, prompt, field) {
+        function startInlineEdit(cell, item, field, table = 'prompts') {
           if (cell.querySelector('.inline-edit-el')) return;
-          const originalValue = prompt[field] || '';
+          const originalValue = item[field] || '';
           cell.innerHTML = '';
+          cell.classList.add('relative');
 
-          const input = field === 'content' ? document.createElement('textarea') : document.createElement('input');
-          input.className = 'inline-edit-el w-full bg-white border-2 border-brand-orange/20 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-4 focus:ring-brand-orange/5 transition-all';
-          if (field === 'content') input.rows = 3;
+          const input = (field === 'content' && table === 'prompts') ? document.createElement('textarea') : document.createElement('input');
+          input.className = 'inline-edit-el w-full bg-white border-2 border-brand-orange/40 rounded-xl px-3 py-2 text-sm font-bold outline-none focus:ring-4 focus:ring-brand-orange/5 transition-all';
+          if (input.tagName === 'TEXTAREA') input.rows = 4;
           input.value = originalValue;
 
+          const controls = document.createElement('div');
+          controls.className = 'absolute right-2 bottom-2 flex gap-1 z-20';
+          controls.innerHTML = `
+            <button class="btn-inline-save bg-brand-orange text-white p-1 rounded-lg shadow-lg hover:shadow-orange-500/20 transition-all"><i data-lucide="check" class="h-3 w-3"></i></button>
+            <button class="btn-inline-cancel bg-white border border-slate-200 text-slate-400 p-1 rounded-lg shadow-lg hover:bg-slate-50 transition-all"><i data-lucide="x" class="h-3 w-3"></i></button>
+          `;
+
           cell.appendChild(input);
+          cell.appendChild(controls);
+          if (window.lucide) window.lucide.createIcons();
           input.focus();
 
           const save = async () => {
             const newValue = input.value.trim();
-            if (newValue && newValue !== originalValue) {
+            if (newValue !== originalValue) {
               await utils.withLoading(null, async () => {
-                const updated = { ...prompt, [field]: newValue };
-                await api.savePrompt(updated);
-                await loadPromptsData();
+                if (table === 'prompts') {
+                  const updated = { ...item, [field]: newValue };
+                  await api.savePrompt(updated);
+                  await loadPromptsData();
+                } else if (table === 'topics') {
+                  await supabase.from('topics').update({ [field]: newValue }).eq('id', item.id);
+                  await loadMarketData();
+                }
               });
             } else {
               cell.textContent = originalValue;
             }
           };
 
-          input.onblur = save;
+          const cancel = () => {
+            cell.textContent = originalValue;
+          };
+
+          controls.querySelector('.btn-inline-save').onclick = (e) => { e.stopPropagation(); save(); };
+          controls.querySelector('.btn-inline-cancel').onclick = (e) => { e.stopPropagation(); cancel(); };
+
           input.onkeydown = (e) => {
-            if (e.key === 'Enter' && field !== 'content') save();
-            if (e.key === 'Escape') {
-              input.onblur = null;
-              cell.textContent = originalValue;
-            }
+            if (e.key === 'Enter' && input.tagName !== 'TEXTAREA') { e.stopPropagation(); save(); }
+            if (e.key === 'Escape') { e.stopPropagation(); cancel(); }
+          };
+
+          input.onblur = (e) => {
+            // Delay to allow clicking buttons
+            setTimeout(() => {
+              if (document.activeElement !== input && !controls.contains(document.activeElement)) {
+                if (input.value.trim() === originalValue) cancel();
+              }
+            }, 150);
           };
         }
 
