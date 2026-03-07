@@ -788,7 +788,7 @@
                     ${can ? `<button class="btn-del-topic absolute right-2 top-2.5 p-1.5 opacity-0 group-hover:opacity-100 text-slate-300 hover:text-red-500 transition-all rounded-lg" data-id="${t.id}"><i data-lucide="trash-2" class="h-3.5 w-3.5"></i></button>` : ''}
                   </div>
                 `);
-                b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; await loadPromptsData(); };
+                b.querySelector('button').onclick = async () => { state.selectedTopicId = t.id; state.selectedPromptId = null; state.isEditingNew = false; state.viewMode = 'list'; await loadPromptsData(); };
                 const db = b.querySelector('.btn-del-topic');
                 if (db) db.onclick = async (e) => {
                   e.stopPropagation();
@@ -916,7 +916,7 @@
                 </div>
               `}
             `;
-            window.setTopic = async (tid) => { state.selectedTopicId = tid; await loadPromptsData(); };
+            window.setTopic = async (tid) => { state.selectedTopicId = tid; state.viewMode = 'list'; await loadPromptsData(); };
             document.getElementById('btn-view-grid')?.addEventListener('click', () => { state.viewMode = 'grid'; render(); });
             document.getElementById('btn-view-list')?.addEventListener('click', () => { state.viewMode = 'list'; render(); });
             document.getElementById('sel-topic-sort')?.addEventListener('change', (e) => { state.topicSortBy = e.target.value; render(); });
@@ -928,12 +928,20 @@
                 const tr = document.createElement('tr');
                 tr.className = 'group hover:bg-slate-50/50 transition-colors cursor-pointer';
                 tr.innerHTML = `
-                  <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell" data-field="name">${t.name}</td>
+                  <td class="px-6 py-5 text-sm font-bold text-slate-700 editable-cell" data-field="name">
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 rounded-lg bg-orange-50 text-brand-orange flex items-center justify-center flex-shrink-0"><i data-lucide="folder" class="h-4 w-4"></i></div>
+                      ${t.name}
+                    </div>
+                  </td>
                   <td class="px-6 py-5 text-[10px] font-black uppercase tracking-widest text-slate-300">${new Date(t.created_at).toLocaleDateString()}</td>
-                  <td class="px-6 py-5 text-right opacity-0 group-hover:opacity-100 transition-opacity">
-                    <div class="flex justify-end gap-2">
-                      <button class="btn-edit-topic p-2 text-slate-300 hover:text-brand-orange transition-colors rounded-lg" title="${t('editName')}"><i data-lucide="edit-3" class="h-4 w-4"></i></button>
-                      <button class="btn-del-topic p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" title="${t('deleteCategory')}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                  <td class="px-6 py-5 text-right">
+                    <div class="flex justify-end items-center gap-4">
+                      <div class="flex gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <button class="btn-edit-topic p-2 text-slate-300 hover:text-brand-orange transition-colors rounded-lg" title="${t('editName')}"><i data-lucide="edit-3" class="h-4 w-4"></i></button>
+                        <button class="btn-del-topic p-2 text-slate-300 hover:text-red-500 transition-colors rounded-lg" title="${t('deleteCategory')}"><i data-lucide="trash-2" class="h-4 w-4"></i></button>
+                      </div>
+                      <i data-lucide="chevron-right" class="h-5 w-5 text-slate-300 group-hover:text-brand-orange transition-colors"></i>
                     </div>
                   </td>
                 `;
